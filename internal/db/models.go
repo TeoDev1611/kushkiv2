@@ -11,24 +11,30 @@ type EmisorConfig struct {
 	gorm.Model
 	RUC             string `gorm:"primaryKey;uniqueIndex"`
 	RazonSocial     string
-	NombreComercial string // Nuevo campo
-	Direccion       string // Dirección Matriz
+	NombreComercial string
+	Direccion       string
+	// Seguridad / Licenciamiento
+	LicenseKey      string // Clave ingresada por el usuario (Ej: PRO-2026-X)
+	LicenseToken    string // Token JWT devuelto por el servidor (para autenticar peticiones futuras)
+	
+	// Firma Electrónica
 	P12Path         string
 	P12Password     string // Se guardará cifrada
+	
+	// Configuración SRI
 	Ambiente        int    // 1: Pruebas, 2: Producción
 	Estab           string // Ej: '001'
 	PtoEmi          string // Ej: '001'
 	Obligado        bool   // Obligado a llevar contabilidad
-	SMTPHost        string
-	SMTPUser        string
-	SMTPPass        string
-	StoragePath     string // Ruta base para guardar archivos (ej: C:/Facturas)
+	
+	// Archivos
+	StoragePath     string // Ruta base para guardar archivos
 }
 
 // Client representa a los clientes/compradores.
 type Client struct {
-	ID        string `gorm:"primaryKey"` // RUC o Cédula
-	TipoID    string // 04: RUC, 05: Cédula, 06: Pasaporte, 07: Consumidor Final
+	ID        string `gorm:"primaryKey"`
+	TipoID    string
 	Nombre    string `gorm:"index"`
 	Direccion string
 	Email     string
@@ -44,9 +50,9 @@ type Factura struct {
 	FechaEmision    time.Time
 	ClienteID       string
 	Total           float64
-	EstadoSRI       string // PENDIENTE, RECIBIDO, AUTORIZADO, RECHAZADO
+	EstadoSRI       string
 	XMLFirmado      []byte `gorm:"type:blob"`
-	PDFRIDE         []byte `gorm:"type:blob"` // PDF Generado
+	PDFRIDE         []byte `gorm:"type:blob"`
 	MensajeError    string
 	Subtotal15      float64
 	Subtotal0       float64
@@ -55,7 +61,7 @@ type Factura struct {
 	UpdatedAt       time.Time
 }
 
-// FacturaItem almacena el detalle de cada producto en una factura (para reportería rápida).
+// FacturaItem almacena el detalle de cada producto.
 type FacturaItem struct {
 	ID               uint    `gorm:"primaryKey"`
 	FacturaClave     string  `gorm:"index"`
@@ -68,34 +74,35 @@ type FacturaItem struct {
 	CreatedAt        time.Time
 }
 
-// Product representa el inventario de productos.
+// Product representa el inventario.
 type Product struct {
 	SKU           string `gorm:"primaryKey"`
 	Name          string `gorm:"index"`
 	Price         float64
 	Stock         int
-	TaxCode       int // 2 para IVA
-	TaxPercentage int // 0, 15, etc.
+	TaxCode       int
+	TaxPercentage int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
 
-// EmailQueue maneja la cola de envíos de correos electrónicos.
+// EmailQueue se mantiene temporalmente por si quedan registros antiguos, 
+// pero ya no será procesada por el sistema legacy.
 type EmailQueue struct {
 	ID         uint      `gorm:"primaryKey"`
 	To         string    `gorm:"index"`
 	Subject    string
 	Body       string    `gorm:"type:text"`
-	Attachment []byte    `gorm:"type:blob"` // El PDF de la factura
-	AttachName string    // Nombre del archivo adjunto
-	Status     string    `gorm:"index;default:'PENDIENTE'"` // PENDIENTE, ENVIADO, ERROR
-	RetryCount int       `gorm:"default:0"`
+	Attachment []byte    `gorm:"type:blob"`
+	AttachName string
+	Status     string
+	RetryCount int
 	LastError  string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
 
-// --- DTOs para transferencia de datos (Sin tipos complejos) ---
+// --- DTOs ---
 
 type EmisorConfigDTO struct {
 	RUC             string `json:"RUC"`
@@ -108,10 +115,8 @@ type EmisorConfigDTO struct {
 	Estab           string `json:"Estab"`
 	PtoEmi          string `json:"PtoEmi"`
 	Obligado        bool   `json:"Obligado"`
-	SMTPHost        string `json:"SMTPHost"`
-	SMTPUser        string `json:"SMTPUser"`
-	SMTPPass        string `json:"SMTPPass"`
 	StoragePath     string `json:"StoragePath"`
+	// SMTP Eliminado del DTO
 }
 
 type ClientDTO struct {
@@ -139,9 +144,9 @@ type FacturaDTO struct {
 	ClienteDireccion string        `json:"clienteDireccion"`
 	ClienteEmail     string        `json:"clienteEmail"`
 	ClienteTelefono  string        `json:"clienteTelefono"`
-	FormaPago        string        `json:"formaPago"` // "01", "16", "19", "20"
+	FormaPago        string        `json:"formaPago"`
 	Items            []InvoiceItem `json:"items"`
-	ClaveAcceso      string        // Output
+	ClaveAcceso      string
 }
 
 type FacturaResumenDTO struct {
@@ -159,7 +164,6 @@ type InvoiceItem struct {
 	Nombre        string  `json:"nombre"`
 	Cantidad      float64 `json:"cantidad"`
 	Precio        float64 `json:"precio"`
-	// Se reemplaza TieneIVA por CodigoImpuesto explícito para soportar 5%, 15%, etc.
-	CodigoIVA     string  `json:"codigoIVA"` // "0", "2", "4" (15%), "5" (5%)
-	PorcentajeIVA float64 `json:"porcentajeIVA"` // 0.0, 12.0, 15.0, 5.0
+	CodigoIVA     string  `json:"codigoIVA"`
+	PorcentajeIVA float64 `json:"porcentajeIVA"`
 }

@@ -1,130 +1,73 @@
-# 🛠️ TECH.md - Documentación Técnica y Arquitectura
+# Documentación Técnica (TECH.md)
 
-> **Solo para Desarrolladores.** Este documento detalla la estructura interna, flujos de datos y decisiones de diseño de Kushki Facturador v2.
+## Arquitectura del Sistema
 
----
+### 1. Diagrama de Componentes
 
-## 1. Arquitectura de Alto Nivel
+```mermaid
+graph TD
+    UI[Frontend Svelte] <-->|Wails Bridge| App[Go Backend Desktop]
+    App <-->|GORM| DB[(SQLite Local)]
+    App -->|HTTPS/JSON| API[Cloud API (Deno)]
+    App -->|SOAP| SRI[SRI Web Services]
+    
+    subgraph "Go Internal Services"
+        InvoiceSvc[Invoice Service]
+        CloudSvc[Cloud Service]
+        SyncSvc[Sync Service]
+    end
+    
+    App --> InvoiceSvc
+    App --> CloudSvc
+    App --> SyncSvc
+```
 
-El sistema sigue una arquitectura **Híbrida Nativa** utilizando el patrón **Backend-as-a-Service (BaaS)** local.
+### 2. Módulo de Seguridad (Licenciamiento)
 
-*   **Frontend (UI):** Svelte (JavaScript/HTML/CSS). Se ejecuta en un WebView del sistema (WebKit/WebView2).
-*   **Backend (Core):** Go (Golang). Maneja toda la lógica de negocio, criptografía, base de datos y comunicación con el SRI.
-*   **Bridge:** [Wails v2](https://wails.io). Interconecta JS y Go. Las funciones de Go en `app.go` se exponen como Promesas en JS.
+El sistema implementa un modelo de seguridad "Node-Locked" para prevenir la piratería.
 
----
+*   **Machine ID:** Se genera un hash SHA-256 único basado en: `Hostname + OS + Arch`.
+*   **Activación:**
+    *   Endpoint: `POST /api/v1/license/activate`
+    *   Payload: `{ license_key: "...", machine_id: "..." }`
+    *   Respuesta: Token JWT que se almacena localmente (`EmisorConfig.LicenseToken`).
+*   **Persistencia:** La clave y el token se guardan en la tabla `emisor_configs`.
+*   **Bloqueo UI:** El Frontend verifica el estado de la licencia antes de montar el Dashboard.
 
-## 2. Mapa del Código (Directory Structure)
+### 3. Servicio de Nube (`CloudService`)
 
-### 🟢 Backend (Go)
-*   **`main.go`**: Entrypoint. Configura Wails, ciclo de vida (`OnStartup`, `OnShutdown`) y gestiona el cierre seguro de la DB.
-*   **`app.go`**: **Controlador Principal**. Aquí están los métodos públicos expuestos al Frontend (e.g., `CreateInvoice`, `GetDashboardStats`). Actúa como orquestador.
-*   **`internal/`**: Código privado de la aplicación.
-    *   **`db/`**: Modelos GORM (`models.go`), conexión SQLite (`connection.go`) y migraciones (`migrations.go`).
-    *   **`service/`**: Lógica de negocio pura.
-        *   `invoice_service.go`: Orquesta XML, Firma, SRI y PDF.
-        *   `sync_service.go`: Maneja la cola de reintentos y workers concurrentes.
-        *   `mail_service.go`: Envío SMTP.
-*   **`pkg/`**: Librerías reutilizables/bajas.
-    *   **`crypto/`**: Implementación manual de **XAdES-BES** y manejo de certificados P12.
-    *   **`sri/`**: Cliente SOAP para Recepción y Autorización.
-    *   **`xml/`**: Estructuras UBL 2.1 (Factura Electrónica).
-    *   **`pdf/`**: Generador de RIDE usando `maroto`.
+Reemplaza la antigua infraestructura SMTP local. Centraliza la comunicación externa.
 
-### 🟠 Frontend (Svelte)
-*   **`src/App.svelte`**: Single Page Application. Contiene el Router (Tabs), Estado Global y lógica de UI.
-*   **`src/components/`**:
-    *   `Sidebar.svelte`: Navegación lateral colapsable.
-    *   `Wizard.svelte`: Asistente de configuración inicial.
-*   **`wailsjs/`**: **NO TOCAR**. Código autogenerado por Wails que conecta JS con Go.
+*   **Responsabilidades:**
+    1.  Validación de Licencias.
+    2.  Envío de Correos Transaccionales (Facturas PDF).
+*   **Envío de PDF:**
+    *   Usa `multipart/form-data`.
+    *   Envía el PDF generado en memoria (sin guardar en disco temporalmente para el envío) directamente a la API.
+    *   Endpoint: `POST /enviar-pdf`.
 
----
+### 4. Flujo de Emisión de Factura
 
-## 3. Flujos Críticos
+1.  **UI:** Usuario llena formulario y da clic en "Emitir".
+2.  **App:** `InvoiceService` construye XML, firma (XAdES-BES) y envía al SRI.
+3.  **App:** Si SRI autoriza, `ReportService` genera el RIDE (PDF).
+4.  **App:** Guarda XML y PDF en disco local (organizado por Año/Mes).
+5.  **App (Async):** Invoca `CloudService.SendPDFReport()` en una goroutine para enviar el correo al cliente final vía API Cloud.
 
-### A. Emisión de Factura (El "Hot Path")
-1.  **Frontend:** Recoge datos → Llama a `CreateInvoice(dto)`.
-2.  **Go (App):** Recibe DTO → Pasa a `InvoiceService`.
-3.  **InvoiceService:**
-    *   Genera **Clave de Acceso** (Algoritmo Modulo 11).
-    *   Construye XML (UBL 2.1) en memoria.
-    *   **Firma:** Usa `pkg/crypto` para inyectar la firma XAdES-BES en el XML.
-    *   **SRI Recepción:** Envía XML firmado al WebService del SRI.
-    *   **SRI Autorización:** Consulta estado.
-    *   **PDF:** Genera el RIDE con código QR.
-    *   **DB:** Guarda la transacción en SQLite.
-4.  **Go (App):** Guarda archivos físicos (`/Año/Mes/FACTURA-001...`) y encola email.
-5.  **Frontend:** Recibe "Éxito" y actualiza Dashboard.
+### 5. Base de Datos
 
-### B. Sincronización (Worker Pool)
-Para no congelar la UI al procesar facturas pendientes:
-1.  `SyncService` inicia un **Worker** en segundo plano (Goroutine).
-2.  Usa un canal semáforo (`make(chan struct{}, 3)`) para limitar a **3 envíos simultáneos** al SRI.
-3.  Si el SRI responde, actualiza el estado en DB y genera logs detallados en memoria para el panel "Sincronización".
+*   **Motor:** SQLite 3.
+*   **ORM:** GORM.
+*   **Tablas Críticas:**
+    *   `emisor_configs`: Configuración y Credenciales de Licencia.
+    *   `facturas`: Historial transaccional completo (incluye blobs de XML/PDF).
+    *   `products` / `clients`: Catálogos maestros.
 
-### C. Dashboard (Concurrencia)
-Al cargar `GetDashboardStats`, Go lanza **4 Goroutines** en paralelo usando `sync.WaitGroup`:
-1.  Suma de ventas del mes.
-2.  Conteo de facturas.
-3.  Conteo de pendientes.
-4.  Cálculo de tendencia (Gráfico) mediante SQL optimizado.
-Esto reduce el tiempo de carga de ~500ms a ~50ms.
+### 6. Configuración de Usuario
 
----
+Se ha eliminado la configuración técnica compleja (SMTP). El usuario solo configura:
+1.  **Empresa:** RUC, Razón Social, Dirección.
+2.  **Firma:** Archivo `.p12` y Contraseña.
+3.  **Rutas:** Carpeta de almacenamiento (opcional).
 
-## 4. Base de Datos (SQLite)
-
-### Configuración
-*   **Archivo:** `kushki.db` en la raíz.
-*   **Modo:** `WAL` (Write-Ahead Logging) habilitado en `internal/db/connection.go`. Permite lecturas mientras se escribe.
-*   **Índices:** Se añaden índices manuales en `migrations.go` para:
-    *   `fecha_emision` + `estado_sri` (Dashboard).
-    *   `created_at` (Historial).
-
-### Tablas Clave
-*   `emisor_configs`: Configuración única (RUC, Firma, SMTP).
-*   `facturas`: Cabecera de documentos. Contiene BLOBs para `xml_firmado` y `pdf_ride`.
-*   `factura_items`: Detalle de productos por factura.
-*   `products`: Inventario.
-*   `clients`: Directorio.
-
----
-
-## 5. Criptografía (XAdES-BES)
-
-La firma **NO** usa librerías externas de Java ni OpenSSL. Es una implementación nativa en Go (`pkg/crypto/signer.go`).
-
-*   **Proceso:**
-    1.  Calcula Hash SHA1 del XML ("Canonicalizado").
-    2.  Firma el Hash con la llave privada del `.p12`.
-    3.  Construye la estructura `KeyInfo`, `SignedProperties` y `SignatureValue` según estándar SRI.
-    4.  Inyecta el nodo `<ds:Signature>` en el XML original.
-
-> **Nota:** Si cambias algo en la estructura del XML antes de firmar, la firma se romperá (Error "Firma Inválida"). La canonicalización es estricta.
-
----
-
-## 6. Guía para Extender
-
-### ¿Cómo añadir un nuevo reporte?
-1.  Crea la función en `internal/service/report_service.go`.
-2.  Exponla en `app.go` (struct `App`).
-3.  Ejecuta `wails dev` para regenerar los bindings en `frontend/wailsjs/`.
-4.  Consúmela en Svelte importándola desde `../wailsjs/go/main/App.js`.
-
-### ¿Cómo añadir un nuevo tipo de documento (e.g., Retenciones)?
-1.  Define la estructura XML en `pkg/xml/structures.go`.
-2.  Crea un nuevo servicio o extiende `invoice_service.go`.
-3.  Asegúrate de cambiar el "Tipo de Comprobante" en la generación de la Clave de Acceso (`pkg/util/mod11.go`).
-
----
-
-## 7. Solución de Problemas Comunes
-
-*   **Error "Database Locked":** Ocurre si dos goroutines intentan escribir sin usar el pool de conexiones correcto. GORM + WAL mode ya lo mitiga, pero asegura siempre usar `db.GetDB()`.
-*   **Interfaz Lenta en Linux:** Verifica que no hayas reintroducido `backdrop-filter: blur` en CSS. Wails usa WebKitGTK que no optimiza bien ese filtro.
-*   **Firma Inválida en SRI:** Revisa `signer.go`. El SRI exige que los namespaces XML (`xmlns`) estén exactamente en el orden correcto y sin espacios extra.
-
----
-
-**Desarrollado con ❤️ y Go.**
+Todo lo demás (servidor de correos, validación) es gestionado por la plataforma Cloud.

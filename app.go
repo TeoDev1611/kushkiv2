@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	goruntime "runtime"
+	runtime "runtime"
 	"sync"
 	"time"
 
@@ -22,8 +22,9 @@ type App struct {
 	ctx            context.Context
 	invoiceService *service.InvoiceService
 	reportService  *service.ReportService
-	mailService    *service.MailService
 	syncService    *service.SyncService
+	cloudService   *service.CloudService
+	// mailService ELIMINADO: Se usa CloudService
 }
 
 // DashboardStats contiene las métricas para el frontend
@@ -45,8 +46,8 @@ func NewApp() *App {
 	return &App{
 		invoiceService: service.NewInvoiceService(),
 		reportService:  service.NewReportService(),
-		mailService:    service.NewMailService(),
 		syncService:    service.NewSyncService(),
+		cloudService:   service.NewCloudService(),
 	}
 }
 
@@ -55,7 +56,6 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	// Iniciar Workers
-	a.mailService.StartWorker()
 	a.syncService.StartWorker()
 }
 
@@ -69,13 +69,60 @@ func (a *App) NotifyFrontend(tipo, mensaje string) {
 	}
 }
 
+// --- LICENCIAMIENTO ---
+
+// CheckLicense verifica si el sistema tiene una licencia activa.
+func (a *App) CheckLicense() bool {
+	var config db.EmisorConfig
+	// Verificación básica: Existencia en DB
+	result := db.GetDB().First(&config)
+	if result.Error != nil {
+		return false
+	}
+	// TODO: En el futuro, validar firma del Token JWT almacenado para mayor seguridad
+	return config.LicenseKey != "" && config.LicenseToken != ""
+}
+
+// ActivateLicense intenta activar una licencia con el backend.
+func (a *App) ActivateLicense(key string) string {
+	if key == "" {
+		return "Error: La clave de licencia no puede estar vacía"
+	}
+
+	// 1. Llamar al Backend
+	resp, err := a.cloudService.ActivateLicense(key)
+	if err != nil {
+		return fmt.Sprintf("Error de activación: %v", err)
+	}
+
+	// 2. Guardar Licencia y Token en DB
+	var config db.EmisorConfig
+	res := db.GetDB().First(&config)
+	
+	config.LicenseKey = key
+	config.LicenseToken = resp.Token // Guardamos el token para autenticación futura
+	
+	// Asegurar campos mínimos si es la primera vez
+	if config.RUC == "" {
+		config.RUC = "9999999999999" // Temporal
+		config.RazonSocial = "Nuevo Usuario"
+	}
+
+	if res.Error != nil {
+		db.GetDB().Create(&config)
+	} else {
+		db.GetDB().Save(&config)
+	}
+
+	return fmt.Sprintf("Éxito: %s", resp.Message)
+}
+
 // --- REPORTERÍA ---
 
 // ExportSalesExcel permite al usuario guardar el reporte de ventas en Excel.
 func (a *App) ExportSalesExcel(startStr, endStr string) string {
 	start, _ := time.Parse("2006-01-02", startStr)
 	end, _ := time.Parse("2006-01-02", endStr)
-	// Ajustar fin del día
 	end = end.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 
 	data, err := a.reportService.GenerateSalesExcel(start, end)
@@ -83,7 +130,6 @@ func (a *App) ExportSalesExcel(startStr, endStr string) string {
 		return fmt.Sprintf("Error generando Excel: %v", err)
 	}
 
-	// Diálogo para guardar
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
 		DefaultFilename: fmt.Sprintf("Reporte_Ventas_%s.xlsx", time.Now().Format("20060102")),
 		Title:           "Guardar Reporte de Ventas",
@@ -109,7 +155,7 @@ func (a *App) GetTopProducts() []service.TopProduct {
 	return products
 }
 
-// GetDashboardStats calcula los KPIs del mes actual de forma concurrente.
+// GetDashboardStats calcula los KPIs.
 func (a *App) GetDashboardStats() DashboardStats {
 	var stats DashboardStats
 	now := time.Now()
@@ -118,7 +164,6 @@ func (a *App) GetDashboardStats() DashboardStats {
 	sevenDaysAgo := now.AddDate(0, 0, -6)
 
 	var wg sync.WaitGroup
-	// Lanzaremos 4 goroutines (Total, Count, Pendientes, Trend)
 	wg.Add(4)
 
 	// 1. Total Vendido
@@ -146,16 +191,17 @@ func (a *App) GetDashboardStats() DashboardStats {
 			Count(&stats.Pendientes)
 	}()
 
-	// 4. Ping Simulado (Instantáneo)
+	// 4. Ping Simulado
 	stats.SRIOnline = true
 
-	// 5. Tendencia de Ventas (Map intermedio para evitar race conditions en append)
+	// 5. Tendencia
 	trendMap := make(map[string]float64)
 	var trendErr error
 	
-	go func() {
+go func() {
 		defer wg.Done()
-		rows, err := db.GetDB().Table("facturas").
+	
+rows, err := db.GetDB().Table("facturas").
 			Select("date(fecha_emision) as date, SUM(total) as total").
 			Where("estado_sri = ? AND fecha_emision >= ?", "AUTORIZADO", sevenDaysAgo).
 			Group("date").
@@ -171,17 +217,16 @@ func (a *App) GetDashboardStats() DashboardStats {
 		for rows.Next() {
 			var d string
 			var t float64
-			rows.Scan(&d, &t)
+		
+rows.Scan(&d, &t)
 			if len(d) >= 10 {
 				trendMap[d[:10]] = t
 			}
 		}
 	}()
 
-	// Esperar a que todas terminen
 	wg.Wait()
 
-	// Procesar resultados del mapa de tendencia (esto es rápido y en memoria)
 	if trendErr == nil {
 		for i := 0; i < 7; i++ {
 			day := sevenDaysAgo.AddDate(0, 0, i).Format("2006-01-02")
@@ -198,12 +243,10 @@ func (a *App) GetDashboardStats() DashboardStats {
 
 // --- SINCRONIZACIÓN ---
 
-// GetSyncLogs recupera los logs de sincronización del servicio en memoria.
 func (a *App) GetSyncLogs() []service.SyncLog {
 	return a.syncService.GetLogs()
 }
 
-// TriggerSyncManual fuerza la ejecución de la sincronización de facturas pendientes.
 func (a *App) TriggerSyncManual() string {
 	return a.syncService.TriggerSync()
 }
@@ -219,16 +262,13 @@ func (a *App) SelectStoragePath() string {
 	return selection
 }
 
-// saveDocument organiza y guarda archivos físicamente según la configuración.
-// Esta función es interna pero se expone la lógica para uso del sistema.
+// saveDocument organiza y guarda archivos físicamente.
 func (a *App) saveDocument(secuencial string, fecha time.Time, fileType string, content []byte) error {
-	// 1. Obtener Configuración
 	config := a.GetEmisorConfig()
 	if config == nil || config.StoragePath == "" {
 		return fmt.Errorf("no hay ruta de almacenamiento configurada")
 	}
 
-	// 2. Crear Estructura de Carpetas: Ruta / Año / Mes
 	year := fmt.Sprintf("%d", fecha.Year())
 	month := fmt.Sprintf("%02d", fecha.Month())
 	fullPath := filepath.Join(config.StoragePath, year, month)
@@ -237,30 +277,27 @@ func (a *App) saveDocument(secuencial string, fecha time.Time, fileType string, 
 		return fmt.Errorf("error creando directorios: %v", err)
 	}
 
-	// 3. Nombrar Archivo
 	fileName := fmt.Sprintf("FACTURA-%s.%s", secuencial, fileType)
 	finalPath := filepath.Join(fullPath, fileName)
 
-	// 4. Guardar
 	return os.WriteFile(finalPath, content, 0644)
 }
 
 // CreateInvoice expone la funcionalidad de emisión de facturas al frontend.
-// Ahora incluye el guardado automático de archivos.
 func (a *App) CreateInvoice(data db.FacturaDTO) string {
-	// 1. Emitir (Lógica de negocio, firma, SRI)
+	// 1. Emitir
 	err := a.invoiceService.EmitirFactura(&data)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	// 2. Recuperar la factura creada para obtener los bytes (XML/PDF)
+	// 2. Recuperar la factura
 	var factura db.Factura
 	if err := db.GetDB().First(&factura, "secuencial = ?", data.Secuencial).Error; err != nil {
-		return "Advertencia: Factura emitida pero no se pudo recuperar para guardar archivos locales."
+		return "Advertencia: Factura emitida pero no se pudo recuperar para guardar archivos."
 	}
 
-	// 3. Guardar Archivos Organizadamente (Si hay path configurado)
+	// 3. Guardar Archivos Locales
 	if errSave := a.saveDocument(factura.Secuencial, factura.FechaEmision, "xml", factura.XMLFirmado); errSave != nil {
 		fmt.Printf("Error guardando XML local: %v\n", errSave)
 	}
@@ -270,27 +307,25 @@ func (a *App) CreateInvoice(data db.FacturaDTO) string {
 		}
 	}
 
-	// 4. Encolar Correo Automático (Si el cliente tiene email)
-	if data.ClienteEmail != "" {
-		body := fmt.Sprintf(`
-			<h2>Comprobante Electrónico Recibido</h2>
-			<p>Estimado(a) <b>%s</b>,</p>
-			<p>Adjunto a este correo encontrará su factura electrónica <b>%s</b> por un valor de <b>$%0.2f</b>.</p>
-			<p>Gracias por su preferencia.</p>
-			<hr>
-			<small>Este es un correo automático, por favor no responder.</small>
-		`, data.ClienteNombre, factura.Secuencial, factura.Total)
-
-		subject := fmt.Sprintf("Factura Electrónica %s - %s", factura.Secuencial, data.ClienteNombre)
-		attachName := fmt.Sprintf("FACTURA-%s.pdf", factura.Secuencial)
-
-		_ = a.mailService.QueueEmail(data.ClienteEmail, subject, body, factura.PDFRIDE, attachName)
+	// 4. ENVIAR CORREO VIA CLOUD API (Asíncrono)
+	// Ya no usamos SMTP local. Se delega al CloudService.
+	if data.ClienteEmail != "" && len(factura.PDFRIDE) > 0 {
+		go func(email, sec string, pdf []byte) {
+			filename := fmt.Sprintf("FACTURA-%s.pdf", sec)
+			err := a.cloudService.SendPDFReport(email, pdf, filename)
+			if err != nil {
+				fmt.Printf("Error enviando email cloud: %v\n", err)
+				a.NotifyFrontend("error", fmt.Sprintf("Error enviando correo: %v", err))
+			} else {
+				a.NotifyFrontend("success", fmt.Sprintf("Correo enviado a %s", email))
+			}
+		}(data.ClienteEmail, factura.Secuencial, factura.PDFRIDE)
 	}
 
 	return fmt.Sprintf("Éxito: Factura %s emitida con clave %s", data.Secuencial, data.ClaveAcceso)
 }
 
-// ResendInvoiceEmail permite reenviar una factura por correo manualmente.
+// ResendInvoiceEmail reenvía una factura usando la API Cloud.
 func (a *App) ResendInvoiceEmail(claveAcceso string) string {
 	var factura db.Factura
 	if err := db.GetDB().First(&factura, "clave_acceso = ?", claveAcceso).Error; err != nil {
@@ -302,26 +337,21 @@ func (a *App) ResendInvoiceEmail(claveAcceso string) string {
 		return "Error: El cliente no tiene un correo electrónico configurado"
 	}
 
-	body := fmt.Sprintf(`
-		<h2>Reenvío de Comprobante Electrónico</h2>
-		<p>Estimado(a) <b>%s</b>,</p>
-		<p>Adjunto a este correo encontrará su factura electrónica <b>%s</b>.</p>
-		<hr>
-		<small>Este es un correo automático.</small>
-	`, cliente.Nombre, factura.Secuencial)
+	// Envío Asíncrono
+	go func(email, sec string, pdf []byte) {
+		filename := fmt.Sprintf("FACTURA-%s.pdf", sec)
+		err := a.cloudService.SendPDFReport(email, pdf, filename)
+		if err != nil {
+			a.NotifyFrontend("error", fmt.Sprintf("Fallo al reenviar: %v", err))
+		} else {
+			a.NotifyFrontend("success", fmt.Sprintf("Factura reenviada a %s", email))
+		}
+	}(cliente.Email, factura.Secuencial, factura.PDFRIDE)
 
-	subject := fmt.Sprintf("Reenvío Factura %s - %s", factura.Secuencial, cliente.Nombre)
-	attachName := fmt.Sprintf("FACTURA-%s.pdf", factura.Secuencial)
-
-	err := a.mailService.QueueEmail(cliente.Email, subject, body, factura.PDFRIDE, attachName)
-	if err != nil {
-		return fmt.Sprintf("Error al encolar: %v", err)
-	}
-
-	return "Correo encolado para envío"
+	return "Procesando envío..."
 }
 
-// SelectBackupPath abre diálogo para seleccionar carpeta de respaldos.
+// SelectBackupPath abre diálogo para seleccionar carpeta.
 func (a *App) SelectBackupPath() string {
 	selection, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Seleccionar Carpeta para Respaldos Automáticos",
@@ -332,21 +362,17 @@ func (a *App) SelectBackupPath() string {
 	return selection
 }
 
-// CreateBackup ejecuta el respaldo de datos crítico.
+// CreateBackup ejecuta el respaldo.
 func (a *App) CreateBackup() error {
 	config := a.GetEmisorConfig()
 	if config == nil {
 		return fmt.Errorf("no hay configuración")
 	}
 
-	// Definir destino
-	// Si no hay ruta de backup configurada, usar la misma del almacenamiento o documentos
 	backupDir := config.StoragePath
 	if backupDir == "" {
-		// Fallback: Carpeta actual o home
 		backupDir, _ = os.UserHomeDir()
 	} else {
-		// Intentar crear subcarpeta 'Backups'
 		backupDir = filepath.Join(backupDir, "Backups")
 		_ = os.MkdirAll(backupDir, 0755)
 	}
@@ -354,16 +380,11 @@ func (a *App) CreateBackup() error {
 	filename := fmt.Sprintf("Backup_Kushki_%s.zip", time.Now().Format("20060102_150405"))
 	destPath := filepath.Join(backupDir, filename)
 
-	// Archivos a respaldar
 	sources := make(map[string]string)
-	
-	// 1. Base de Datos SQLite
-	// Asumimos que kushki.db está en la raíz de ejecución
 	cwd, _ := os.Getwd()
 	dbPath := filepath.Join(cwd, "kushki.db")
 	sources[dbPath] = "DB"
 
-	// 2. Carpeta de Documentos (XML/PDF)
 	if config.StoragePath != "" {
 		sources[config.StoragePath] = "Docs"
 	}
@@ -371,7 +392,7 @@ func (a *App) CreateBackup() error {
 	return util.CreateBackupZip(destPath, sources)
 }
 
-// GetNextSecuencial devuelve el siguiente número de secuencial disponible.
+// GetNextSecuencial devuelve el siguiente número disponible.
 func (a *App) GetNextSecuencial() string {
 	sec, err := a.invoiceService.GetNextSecuencial()
 	if err != nil {
@@ -380,34 +401,18 @@ func (a *App) GetNextSecuencial() string {
 	return sec
 }
 
-// --- HISTORIAL Y PDF ---
-
-// FacturasResponse estructura para devolver datos paginados
-type FacturasResponse struct {
-	Total  int64                  `json:"total"`
-	Data   []db.FacturaResumenDTO `json:"data"`
-}
-
-// GetFacturasPaginated devuelve el historial de facturas de forma optimizada.
+// GetFacturasPaginated devuelve el historial.
 func (a *App) GetFacturasPaginated(page int, pageSize int) FacturasResponse {
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = 10
-	}
+	if page < 1 { page = 1 }
+	if pageSize < 1 { pageSize = 10 }
 	offset := (page - 1) * pageSize
 
 	var facturas []db.Factura
 	var total int64
 
-	// Contar total real para la paginación en UI
 	db.GetDB().Model(&db.Factura{}).Count(&total)
-
-	// Consulta Paginada
 	db.GetDB().Order("created_at desc").Limit(pageSize).Offset(offset).Find(&facturas)
 
-	// Optimización N+1 (Mismo patrón de mapeo en memoria)
 	clientIDs := make([]string, 0)
 	uniqueIDs := make(map[string]bool)
 	for _, f := range facturas {
@@ -445,7 +450,6 @@ func (a *App) GetFacturasPaginated(page int, pageSize int) FacturasResponse {
 		})
 	}
 
-	// Si no hay datos, devolver array vacío en lugar de null
 	if resumenes == nil {
 		resumenes = []db.FacturaResumenDTO{}
 	}
@@ -456,7 +460,7 @@ func (a *App) GetFacturasPaginated(page int, pageSize int) FacturasResponse {
 	}
 }
 
-// OpenFacturaPDF extrae el PDF a un temporal y lo abre con el visor del sistema.
+// OpenFacturaPDF abre el PDF con el visor del sistema.
 func (a *App) OpenFacturaPDF(claveAcceso string) string {
 	var factura db.Factura
 	if err := db.GetDB().First(&factura, "clave_acceso = ?", claveAcceso).Error; err != nil {
@@ -467,7 +471,6 @@ func (a *App) OpenFacturaPDF(claveAcceso string) string {
 		return "Error: Esta factura no tiene RIDE generado"
 	}
 
-	// Crear archivo temporal
 	tmpDir := os.TempDir()
 	fileName := fmt.Sprintf("RIDE-%s.pdf", factura.Secuencial)
 	filePath := filepath.Join(tmpDir, fileName)
@@ -476,7 +479,6 @@ func (a *App) OpenFacturaPDF(claveAcceso string) string {
 		return fmt.Sprintf("Error escribiendo archivo temporal: %v", err)
 	}
 
-	// Abrir con comando del sistema
 	var cmd *exec.Cmd
 	switch goruntime.GOOS {
 	case "darwin":
@@ -494,39 +496,7 @@ func (a *App) OpenFacturaPDF(claveAcceso string) string {
 	return "Abriendo PDF..."
 }
 
-// SaveFacturaPDF permite al usuario guardar el PDF en una ubicación específica (Guardado Manual).
-func (a *App) SaveFacturaPDF(claveAcceso string) string {
-	var factura db.Factura
-	if err := db.GetDB().First(&factura, "clave_acceso = ?", claveAcceso).Error; err != nil {
-		return "Error: Factura no encontrada"
-	}
-
-	if len(factura.PDFRIDE) == 0 {
-		return "Error: Esta factura no tiene RIDE generado"
-	}
-
-	// Abrir diálogo de guardar
-	filename := fmt.Sprintf("RIDE_%s.pdf", factura.ClaveAcceso)
-	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		DefaultFilename: filename,
-		Title:           "Guardar RIDE PDF",
-		Filters: []runtime.FileFilter{
-			{DisplayName: "Archivos PDF", Pattern: "*.pdf"},
-		},
-	})
-
-	if err != nil || path == "" {
-		return "Cancelado"
-	}
-
-	if err := os.WriteFile(path, factura.PDFRIDE, 0644); err != nil {
-		return fmt.Sprintf("Error guardando archivo: %v", err)
-	}
-
-	return "PDF guardado exitosamente"
-}
-
-// OpenInvoiceFolder abre la carpeta donde se encuentra almacenada físicamente la factura.
+// OpenInvoiceFolder abre la carpeta.
 func (a *App) OpenInvoiceFolder(claveAcceso string) string {
 	var factura db.Factura
 	if err := db.GetDB().First(&factura, "clave_acceso = ?", claveAcceso).Error; err != nil {
@@ -538,8 +508,6 @@ func (a *App) OpenInvoiceFolder(claveAcceso string) string {
 		return "Error: No se ha configurado una ruta de almacenamiento"
 	}
 
-	// Lazy Write: Intentar restaurar los archivos si no existen
-	// Esto es vital si el usuario cambia la ruta o si es una factura antigua
 	_ = a.saveDocument(factura.Secuencial, factura.FechaEmision, "xml", factura.XMLFirmado)
 	if len(factura.PDFRIDE) > 0 {
 		_ = a.saveDocument(factura.Secuencial, factura.FechaEmision, "pdf", factura.PDFRIDE)
@@ -549,7 +517,6 @@ func (a *App) OpenInvoiceFolder(claveAcceso string) string {
 	month := fmt.Sprintf("%02d", factura.FechaEmision.Month())
 	fullPath := filepath.Join(config.StoragePath, year, month)
 
-	// Verificar existencia después del intento de escritura
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		return fmt.Sprintf("Error: La carpeta %s no pudo ser creada", fullPath)
 	}
@@ -559,16 +526,7 @@ func (a *App) OpenInvoiceFolder(claveAcceso string) string {
 	case "darwin":
 		cmd = exec.Command("open", fullPath)
 	case "windows":
-		// En Windows, explorador puede resaltar el archivo si se le pasa
-		// explorer /select, "C:\Path\To\File.xml"
-		// Intentamos seleccionar el XML
-		fileName := fmt.Sprintf("FACTURA-%s.xml", factura.Secuencial)
-		filePath := filepath.Join(fullPath, fileName)
-		if _, err := os.Stat(filePath); err == nil {
-			cmd = exec.Command("explorer", "/select,", filePath)
-		} else {
-			cmd = exec.Command("explorer", fullPath)
-		}
+		cmd = exec.Command("explorer", fullPath)
 	default: // linux
 		cmd = exec.Command("xdg-open", fullPath)
 	}
@@ -580,7 +538,7 @@ func (a *App) OpenInvoiceFolder(claveAcceso string) string {
 	return "Abriendo carpeta..."
 }
 
-// OpenInvoiceXML abre el archivo XML firmado de la factura con el visor predeterminado.
+// OpenInvoiceXML abre el XML.
 func (a *App) OpenInvoiceXML(claveAcceso string) string {
 	var factura db.Factura
 	if err := db.GetDB().First(&factura, "clave_acceso = ?", claveAcceso).Error; err != nil {
@@ -592,7 +550,6 @@ func (a *App) OpenInvoiceXML(claveAcceso string) string {
 		return "Error: No se ha configurado una ruta de almacenamiento"
 	}
 
-	// Lazy Write: Restaurar archivo si falta
 	if err := a.saveDocument(factura.Secuencial, factura.FechaEmision, "xml", factura.XMLFirmado); err != nil {
 		return fmt.Sprintf("Error restaurando archivo XML: %v", err)
 	}
@@ -619,7 +576,7 @@ func (a *App) OpenInvoiceXML(claveAcceso string) string {
 	return "Abriendo XML..."
 }
 
-// GetEmisorConfig devuelve la configuración actual del emisor.
+// GetEmisorConfig devuelve la configuración.
 func (a *App) GetEmisorConfig() *db.EmisorConfigDTO {
 	var config db.EmisorConfig
 	result := db.GetDB().First(&config)
@@ -627,6 +584,8 @@ func (a *App) GetEmisorConfig() *db.EmisorConfigDTO {
 		return nil
 	}
 	decryptedPass, _ := crypto.Decrypt(config.P12Password)
+	// Eliminado desencriptado SMTP
+
 	return &db.EmisorConfigDTO{
 		RUC:         config.RUC,
 		RazonSocial: config.RazonSocial,
@@ -636,16 +595,12 @@ func (a *App) GetEmisorConfig() *db.EmisorConfigDTO {
 		Estab:       config.Estab,
 		PtoEmi:      config.PtoEmi,
 		Obligado:    config.Obligado,
-		SMTPHost:    config.SMTPHost,
-		SMTPUser:    config.SMTPUser,
-		SMTPPass:    config.SMTPPass,
 		StoragePath: config.StoragePath,
 	}
 }
 
-// SaveEmisorConfig guarda o actualiza la configuración del emisor.
+// SaveEmisorConfig guarda la configuración.
 func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
-	// Validación básica del path si se proporciona
 	if dto.StoragePath != "" {
 		if _, err := os.Stat(dto.StoragePath); os.IsNotExist(err) {
 			return "Error: La ruta de almacenamiento no existe"
@@ -661,7 +616,7 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 	
 	encryptedPass, err := crypto.Encrypt(dto.P12Password)
 	if err != nil {
-		return fmt.Sprintf("Error al cifrar contraseña: %v", err)
+		return fmt.Sprintf("Error al cifrar contraseña firma: %v", err)
 	}
 
 	existing.RUC = dto.RUC
@@ -672,9 +627,6 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 	existing.Estab = dto.Estab
 	existing.PtoEmi = dto.PtoEmi
 	existing.Obligado = dto.Obligado
-	existing.SMTPHost = dto.SMTPHost
-	existing.SMTPUser = dto.SMTPUser
-	existing.SMTPPass = dto.SMTPPass
 	existing.StoragePath = dto.StoragePath
 
 	if result.Error == nil {
@@ -689,7 +641,7 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 	return "Configuración guardada exitosamente"
 }
 
-// SelectCertificate abre un diálogo nativo para seleccionar el archivo .p12
+// SelectCertificate abre diálogo para .p12
 func (a *App) SelectCertificate() string {
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Seleccionar Certificado Digital (.p12)",
@@ -705,7 +657,6 @@ func (a *App) SelectCertificate() string {
 
 // --- GESTIÓN DE CLIENTES ---
 
-// GetClients devuelve la lista completa de clientes.
 func (a *App) GetClients() []db.ClientDTO {
 	var clients []db.Client
 	db.GetDB().Find(&clients)
@@ -716,7 +667,6 @@ func (a *App) GetClients() []db.ClientDTO {
 	return dtos
 }
 
-// SearchClients busca clientes por nombre o ID.
 func (a *App) SearchClients(query string) []db.ClientDTO {
 	var clients []db.Client
 	likeQuery := "%" + query + "%"
@@ -728,7 +678,6 @@ func (a *App) SearchClients(query string) []db.ClientDTO {
 	return dtos
 }
 
-// SaveClient crea o actualiza un cliente.
 func (a *App) SaveClient(dto db.ClientDTO) string {
 	var existing db.Client
 	result := db.GetDB().First(&existing, "id = ?", dto.ID)
@@ -750,7 +699,6 @@ func (a *App) SaveClient(dto db.ClientDTO) string {
 	return "Cliente guardado exitosamente"
 }
 
-// DeleteClient elimina un cliente por ID.
 func (a *App) DeleteClient(id string) string {
 	if err := db.GetDB().Delete(&db.Client{}, "id = ?", id).Error; err != nil {
 		return fmt.Sprintf("Error eliminando cliente: %v", err)
@@ -760,7 +708,6 @@ func (a *App) DeleteClient(id string) string {
 
 // --- GESTIÓN DE PRODUCTOS ---
 
-// GetProducts devuelve todos los productos.
 func (a *App) GetProducts() []db.ProductDTO {
 	var products []db.Product
 	db.GetDB().Find(&products)
@@ -771,7 +718,6 @@ func (a *App) GetProducts() []db.ProductDTO {
 	return dtos
 }
 
-// SearchProducts busca productos por nombre o SKU.
 func (a *App) SearchProducts(query string) []db.ProductDTO {
 	var products []db.Product
 	likeQuery := "%" + query + "%"
@@ -783,7 +729,6 @@ func (a *App) SearchProducts(query string) []db.ProductDTO {
 	return dtos
 }
 
-// SaveProduct guarda o actualiza un producto.
 func (a *App) SaveProduct(dto db.ProductDTO) string {
 	var existing db.Product
 	result := db.GetDB().First(&existing, "sku = ?", dto.SKU)
@@ -805,7 +750,6 @@ func (a *App) SaveProduct(dto db.ProductDTO) string {
 	return "Producto guardado exitosamente"
 }
 
-// DeleteProduct elimina un producto por SKU.
 func (a *App) DeleteProduct(sku string) string {
 	if err := db.GetDB().Delete(&db.Product{}, "sku = ?", sku).Error; err != nil {
 		return fmt.Sprintf("Error eliminando producto: %v", err)

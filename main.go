@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"kushkiv2/internal/db"
+	"kushkiv2/pkg/crypto"
+	"os"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -14,6 +18,13 @@ import (
 var assets embed.FS
 
 func main() {
+	// 1. Inicializar Seguridad (Cargar o Generar Llave Maestra)
+	cwd, _ := os.Getwd()
+	keyPath := filepath.Join(cwd, "master.key")
+	if err := crypto.InitSecurity(keyPath); err != nil {
+		panic(fmt.Sprintf("FATAL: No se pudo inicializar la seguridad criptográfica: %v", err))
+	}
+
 	// Initialize Database and Run Migrations
 	db.Migrate(db.GetDB())
 

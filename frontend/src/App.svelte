@@ -5,7 +5,7 @@
     GetClients, SearchClients, SaveClient, DeleteClient,
     GetNextSecuencial, GetDashboardStats, GetFacturasPaginated, OpenFacturaPDF,
     OpenInvoiceFolder, OpenInvoiceXML, ExportSalesExcel, ResendInvoiceEmail,
-    GetTopProducts, GetSyncLogs, TriggerSyncManual
+    GetTopProducts, GetSyncLogs, TriggerSyncManual, CheckLicense, ActivateLicense
   } from '../wailsjs/go/main/App.js'
   import { EventsOn } from '../wailsjs/runtime/runtime.js'
   import { onMount } from 'svelte'
@@ -29,13 +29,15 @@
   let activeTab = 'dashboard' 
   let loading = false
   let initialLoading = true // Estado para la Splash Screen
+  let isLicensed = false // Estado de Licencia
+  let licenseKeyInput = '' // Input para la licencia
   let showWizard = false
   let contentArea
   let toast = { show: false, message: '', type: 'success' } 
   let confirmationModal = { show: false, title: '', message: '', onConfirm: null }
 
   // --- CONFIGURACIÓN Y FACTURACIÓN ---
-  let config = { RUC: '', RazonSocial: '', NombreComercial: '', Direccion: '', P12Path: '', P12Password: '', Ambiente: 1, Estab: '001', PtoEmi: '001', Obligado: false, SMTPHost: '', SMTPUser: '', SMTPPass: '', StoragePath: '' }
+  let config = { RUC: '', RazonSocial: '', NombreComercial: '', Direccion: '', P12Path: '', P12Password: '', Ambiente: 1, Estab: '001', PtoEmi: '001', Obligado: false, StoragePath: '' }
   let invoice = { secuencial: '000000001', clienteID: '', clienteNombre: '', clienteDireccion: '', clienteEmail: '', clienteTelefono: '', formaPago: '01', items: [] }
   let newItem = { codigo: "", nombre: "", cantidad: 1, precio: 0, codigoIVA: "4", porcentajeIVA: 15 }
   
@@ -93,10 +95,25 @@
   async function loadData() {
     loading = true
     try {
+      // 1. Verificar Licencia
+      const licensed = await CheckLicense()
+      if (!licensed) {
+          isLicensed = false
+          loading = false
+          // Si no está licenciado, permitimos que initialLoading termine para mostrar el panel de licencia
+          return 
+      }
+      isLicensed = true
+
       const cfg = await GetEmisorConfig()
-      if (!cfg || !cfg.RUC) {
+      
+      // Detectar si es configuración virgen o dummy (creada por seed o licencia)
+      const isDefaultRUC = cfg && (cfg.RUC === "1790011223001" || cfg.RUC === "9999999999999");
+      const isMissingData = !cfg || !cfg.RazonSocial || cfg.RazonSocial === "EMISOR DE PRUEBA S.A." || cfg.RazonSocial === "Nuevo Usuario";
+
+      if (!cfg || isDefaultRUC || isMissingData) {
           showWizard = true
-          // No return here, allow loading other lists if possible, but wizard takes precedence visually
+          if (cfg) config = cfg // Cargar lo que haya (ej: Licencia)
       } else {
           config = cfg
       }
@@ -119,6 +136,25 @@
     } finally {
       loading = false 
     }
+  }
+
+  async function handleActivation() {
+      if (!licenseKeyInput) return showToast("Ingresa una licencia válida", "error");
+      loading = true;
+      try {
+          const res = await ActivateLicense(licenseKeyInput);
+          if (res.startsWith("Éxito")) {
+              showToast(res, "success");
+              isLicensed = true;
+              await loadData(); // Cargar datos del sistema
+          } else {
+              showToast(res, "error");
+          }
+      } catch (e) {
+          showToast("Error crítico: " + e, "error");
+      } finally {
+          loading = false;
+      }
   }
 
   function onWizardComplete() {
@@ -364,7 +400,29 @@
 {/if}
 
 <main>
-  <Sidebar {activeTab} on:change={(e) => activeTab = e.detail} />
+  {#if !isLicensed}
+      <div class="license-overlay" in:fade={{ duration: 300 }}>
+          <div class="license-box card">
+              <div class="lock-icon">🔐</div>
+              <h2>Activación Requerida</h2>
+              <p>Bienvenido al Sistema de Facturación Kushki. <br>Ingresa tu clave de producto para continuar.</p>
+              
+              <div class="license-form">
+                  <input bind:value={licenseKeyInput} placeholder="Ingresa tu licencia aquí (Ej: PRO-2026-X)" class="text-center" />
+                  <button class="btn-primary full-width" on:click={handleActivation} disabled={loading}>
+                      {loading ? 'Verificando con Servidor...' : 'Activar Licencia'}
+                  </button>
+              </div>
+
+              {#if toast.show}
+                  <div class="toast-inline {toast.type}" transition:slide>
+                      {toast.message}
+                  </div>
+              {/if}
+          </div>
+      </div>
+  {:else}
+      <Sidebar {activeTab} on:change={(e) => activeTab = e.detail} />
 
   <section class="content" bind:this={contentArea}>
     {#if activeTab === 'dashboard'}
@@ -906,27 +964,7 @@
                 </div>
             </div>
 
-            <!-- SECCIÓN CORREO -->
-            <div class="card config-card">
-                <h3>📧 Servidor de Correo (SMTP)</h3>
-                <div class="form-stack">
-                    <div class="field">
-                        <label>Host SMTP (Ej: smtp.gmail.com:587)</label>
-                        <input bind:value={config.SMTPHost} />
-                    </div>
-                    <div class="field">
-                        <label>Usuario / Email</label>
-                        <input bind:value={config.SMTPUser} />
-                    </div>
-                    <div class="field">
-                        <label>Contraseña de Aplicación</label>
-                        <input type="password" bind:value={config.SMTPPass} />
-                    </div>
-                    <div class="alert-box">
-                        <small>Nota: Para Gmail, usa una "Contraseña de Aplicación" si tienes 2FA activado.</small>
-                    </div>
-                </div>
-            </div>
+            <!-- SECCIÓN CORREO ELIMINADA (Gestionado por API Cloud) -->
         </div>
         
         <div class="actions-right">
@@ -980,6 +1018,7 @@
   {/if}
   
   <Wizard show={showWizard} on:complete={onWizardComplete} />
+  {/if}
 </main>
 
 <style>
@@ -1246,5 +1285,28 @@
     @keyframes expand-width { to { width: 100px; } }
     @keyframes fade-in-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     @keyframes load-progress { 0% { width: 0; } 50% { width: 70%; } 100% { width: 100%; } }
+
+    /* --- LICENSE PANEL STYLES --- */
+    .license-overlay {
+        position: fixed; inset: 0; background: #0B0F19; z-index: 5000;
+        display: flex; align-items: center; justify-content: center;
+        background-image: radial-gradient(circle at center, #1e293b 0%, #0B0F19 100%);
+    }
+    .license-box {
+        width: 400px; padding: 3rem 2rem; text-align: center;
+        display: flex; flex-direction: column; align-items: center; gap: 1.5rem;
+        border: 1px solid rgba(52, 211, 153, 0.2);
+        box-shadow: 0 0 30px rgba(52, 211, 153, 0.1);
+    }
+    .lock-icon { font-size: 3rem; margin-bottom: 0.5rem; }
+    .license-box h2 { color: white; margin: 0; font-weight: 200; letter-spacing: 2px; }
+    .license-box p { color: #94a3b8; font-size: 0.9rem; line-height: 1.5; margin: 0; }
+    .license-form { width: 100%; display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+    .text-center { text-align: center; font-family: monospace; letter-spacing: 1px; font-size: 1.1rem; }
+    .toast-inline {
+        margin-top: 1rem; padding: 10px; border-radius: 8px; font-size: 0.85rem; width: 100%;
+    }
+    .toast-inline.error { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .toast-inline.success { background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
   
   </style>
