@@ -27,6 +27,12 @@ type EmisorConfig struct {
 	PtoEmi          string // Ej: '001'
 	Obligado        bool   // Obligado a llevar contabilidad
 	
+	// Configuración SMTP (Correo Local)
+	SMTPHost        string
+	SMTPPort        int
+	SMTPUser        string
+	SMTPPassword    string
+
 	// Archivos
 	StoragePath     string // Ruta base para guardar archivos
 }
@@ -116,7 +122,12 @@ type EmisorConfigDTO struct {
 	PtoEmi          string `json:"PtoEmi"`
 	Obligado        bool   `json:"Obligado"`
 	StoragePath     string `json:"StoragePath"`
-	// SMTP Eliminado del DTO
+	
+	// SMTP
+	SMTPHost        string `json:"SMTPHost"`
+	SMTPPort        int    `json:"SMTPPort"`
+	SMTPUser        string `json:"SMTPUser"`
+	SMTPPassword    string `json:"SMTPPassword"`
 }
 
 type ClientDTO struct {

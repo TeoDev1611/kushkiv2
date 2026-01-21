@@ -16,10 +16,15 @@
       Ambiente: 1,
       Estab: '001',
       PtoEmi: '001',
-      Obligado: false
+      Obligado: false,
+      SMTPHost: '',
+      SMTPPort: 587,
+      SMTPUser: '',
+      SMTPPassword: ''
   };
   let loading = false;
   let showPassword = false;
+  let showSMTPPassword = false;
 
   async function handleSelectCert() {
       const path = await SelectCertificate();
@@ -40,6 +45,7 @@
       loading = true;
       try {
           config.Ambiente = parseInt(config.Ambiente);
+          config.SMTPPort = parseInt(config.SMTPPort);
           const res = await SaveEmisorConfig(config);
           if (res.startsWith("Error")) {
               alert(res);
@@ -66,6 +72,7 @@
           <div class="step {step >= 1 ? 'active' : ''}">1. Empresa</div>
           <div class="step {step >= 2 ? 'active' : ''}">2. Firma</div>
           <div class="step {step >= 3 ? 'active' : ''}">3. Almacenamiento</div>
+          <div class="step {step >= 4 ? 'active' : ''}">4. Correo</div>
       </div>
 
       <div class="wizard-content">
@@ -117,6 +124,32 @@
                       <input type="checkbox" bind:checked={config.Obligado} /> Obligado a llevar contabilidad
                   </label>
               </div>
+          {:else if step === 4}
+              <div class="field">
+                  <label>Servidor SMTP (Host)</label>
+                  <input bind:value={config.SMTPHost} placeholder="smtp.gmail.com" />
+              </div>
+              <div class="field">
+                  <label>Puerto SMTP</label>
+                  <input type="number" bind:value={config.SMTPPort} placeholder="587" />
+              </div>
+              <div class="field">
+                  <label>Usuario / Correo</label>
+                  <input bind:value={config.SMTPUser} placeholder="tu@empresa.com" />
+              </div>
+              <div class="field">
+                  <label>Contraseña</label>
+                  <div class="input-group">
+                      {#if showSMTPPassword}
+                          <input type="text" bind:value={config.SMTPPassword} />
+                      {:else}
+                          <input type="password" bind:value={config.SMTPPassword} />
+                      {/if}
+                      <button class="btn-secondary" on:click={() => showSMTPPassword = !showSMTPPassword}>
+                          {showSMTPPassword ? '🙈' : '👁️'}
+                      </button>
+                  </div>
+              </div>
           {/if}
       </div>
 
@@ -127,8 +160,11 @@
               <div></div> <!-- Spacer -->
           {/if}
 
-          {#if step < 3}
-              <button class="btn-primary" on:click={() => step++}>Siguiente</button>
+          {#if step < 4}
+              <button class="btn-primary" on:click={() => {
+                  config.SMTPPort = parseInt(config.SMTPPort);
+                  step++;
+              }}>Siguiente</button>
           {:else}
               <button class="btn-primary" on:click={finishSetup} disabled={loading}>
                   {loading ? 'Guardando...' : 'Finalizar y Empezar'}

@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	runtime "runtime"
+	goruntime "runtime"
 	"sync"
 	"time"
 
@@ -24,7 +24,7 @@ type App struct {
 	reportService  *service.ReportService
 	syncService    *service.SyncService
 	cloudService   *service.CloudService
-	// mailService ELIMINADO: Se usa CloudService
+	mailService    *service.MailService
 }
 
 // DashboardStats contiene las métricas para el frontend
@@ -41,6 +41,11 @@ type DailySale struct {
 	Total float64 `json:"total"`
 }
 
+type FacturasResponse struct {
+	Total int64                  `json:"total"`
+	Data  []db.FacturaResumenDTO `json:"data"`
+}
+
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
@@ -48,6 +53,7 @@ func NewApp() *App {
 		reportService:  service.NewReportService(),
 		syncService:    service.NewSyncService(),
 		cloudService:   service.NewCloudService(),
+		mailService:    service.NewMailService(),
 	}
 }
 
@@ -307,19 +313,43 @@ func (a *App) CreateInvoice(data db.FacturaDTO) string {
 		}
 	}
 
-	// 4. ENVIAR CORREO VIA CLOUD API (Asíncrono)
-	// Ya no usamos SMTP local. Se delega al CloudService.
+	// 4. ENVIAR CORREO
 	if data.ClienteEmail != "" && len(factura.PDFRIDE) > 0 {
-		go func(email, sec string, pdf []byte) {
-			filename := fmt.Sprintf("FACTURA-%s.pdf", sec)
-			err := a.cloudService.SendPDFReport(email, pdf, filename)
-			if err != nil {
-				fmt.Printf("Error enviando email cloud: %v\n", err)
-				a.NotifyFrontend("error", fmt.Sprintf("Error enviando correo: %v", err))
-			} else {
-				a.NotifyFrontend("success", fmt.Sprintf("Correo enviado a %s", email))
+		config := a.GetEmisorConfig()
+		
+		go func(email, sec string, pdf []byte, conf *db.EmisorConfigDTO) {
+			// Intentar envío local primero si hay configuración
+			if conf != nil && conf.SMTPHost != "" {
+				smtpConfig := service.SMTPConfig{
+					Host:     conf.SMTPHost,
+					Port:     conf.SMTPPort,
+					User:     conf.SMTPUser,
+					Password: conf.SMTPPassword,
+				}
+				err := a.mailService.SendInvoiceEmail(smtpConfig, email, conf.RazonSocial, pdf, sec)
+				if err != nil {
+					fmt.Printf("Error SMTP local: %v. Intentando Cloud...\n", err)
+					// Fallback a Cloud si falla local? O solo notificar error?
+					// Por ahora notificamos error para que el usuario revise su configuración
+					a.NotifyFrontend("error", fmt.Sprintf("Error enviando correo local: %v", err))
+				} else {
+					a.NotifyFrontend("success", fmt.Sprintf("Correo enviado a %s (Local)", email))
+					return
+				}
 			}
-		}(data.ClienteEmail, factura.Secuencial, factura.PDFRIDE)
+
+			// Fallback o método principal si no hay SMTP local
+			if conf == nil || conf.SMTPHost == "" {
+				filename := fmt.Sprintf("FACTURA-%s.pdf", sec)
+				err := a.cloudService.SendPDFReport(email, pdf, filename)
+				if err != nil {
+					fmt.Printf("Error enviando email cloud: %v\n", err)
+					a.NotifyFrontend("error", fmt.Sprintf("Error enviando correo: %v", err))
+				} else {
+					a.NotifyFrontend("success", fmt.Sprintf("Correo enviado a %s (Cloud)", email))
+				}
+			}
+		}(data.ClienteEmail, factura.Secuencial, factura.PDFRIDE, config)
 	}
 
 	return fmt.Sprintf("Éxito: Factura %s emitida con clave %s", data.Secuencial, data.ClaveAcceso)
@@ -338,7 +368,27 @@ func (a *App) ResendInvoiceEmail(claveAcceso string) string {
 	}
 
 	// Envío Asíncrono
-	go func(email, sec string, pdf []byte) {
+	config := a.GetEmisorConfig()
+
+	go func(email, sec string, pdf []byte, conf *db.EmisorConfigDTO) {
+		// 1. Intentar Local
+		if conf != nil && conf.SMTPHost != "" {
+			smtpConfig := service.SMTPConfig{
+				Host:     conf.SMTPHost,
+				Port:     conf.SMTPPort,
+				User:     conf.SMTPUser,
+				Password: conf.SMTPPassword,
+			}
+			err := a.mailService.SendInvoiceEmail(smtpConfig, email, conf.RazonSocial, pdf, sec)
+			if err != nil {
+				a.NotifyFrontend("error", fmt.Sprintf("Error SMTP: %v", err))
+			} else {
+				a.NotifyFrontend("success", fmt.Sprintf("Factura reenviada a %s", email))
+			}
+			return
+		}
+
+		// 2. Fallback Cloud
 		filename := fmt.Sprintf("FACTURA-%s.pdf", sec)
 		err := a.cloudService.SendPDFReport(email, pdf, filename)
 		if err != nil {
@@ -346,7 +396,7 @@ func (a *App) ResendInvoiceEmail(claveAcceso string) string {
 		} else {
 			a.NotifyFrontend("success", fmt.Sprintf("Factura reenviada a %s", email))
 		}
-	}(cliente.Email, factura.Secuencial, factura.PDFRIDE)
+	}(cliente.Email, factura.Secuencial, factura.PDFRIDE, config)
 
 	return "Procesando envío..."
 }
@@ -584,18 +634,22 @@ func (a *App) GetEmisorConfig() *db.EmisorConfigDTO {
 		return nil
 	}
 	decryptedPass, _ := crypto.Decrypt(config.P12Password)
-	// Eliminado desencriptado SMTP
+	decryptedSMTP, _ := crypto.Decrypt(config.SMTPPassword)
 
 	return &db.EmisorConfigDTO{
-		RUC:         config.RUC,
-		RazonSocial: config.RazonSocial,
-		P12Path:     config.P12Path,
-		P12Password: decryptedPass,
-		Ambiente:    config.Ambiente,
-		Estab:       config.Estab,
-		PtoEmi:      config.PtoEmi,
-		Obligado:    config.Obligado,
-		StoragePath: config.StoragePath,
+		RUC:          config.RUC,
+		RazonSocial:  config.RazonSocial,
+		P12Path:      config.P12Path,
+		P12Password:  decryptedPass,
+		Ambiente:     config.Ambiente,
+		Estab:        config.Estab,
+		PtoEmi:       config.PtoEmi,
+		Obligado:     config.Obligado,
+		StoragePath:  config.StoragePath,
+		SMTPHost:     config.SMTPHost,
+		SMTPPort:     config.SMTPPort,
+		SMTPUser:     config.SMTPUser,
+		SMTPPassword: decryptedSMTP,
 	}
 }
 
@@ -619,6 +673,14 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 		return fmt.Sprintf("Error al cifrar contraseña firma: %v", err)
 	}
 
+	encryptedSMTP := ""
+	if dto.SMTPPassword != "" {
+		encryptedSMTP, err = crypto.Encrypt(dto.SMTPPassword)
+		if err != nil {
+			return fmt.Sprintf("Error al cifrar contraseña SMTP: %v", err)
+		}
+	}
+
 	existing.RUC = dto.RUC
 	existing.RazonSocial = dto.RazonSocial
 	existing.P12Path = dto.P12Path
@@ -628,6 +690,11 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 	existing.PtoEmi = dto.PtoEmi
 	existing.Obligado = dto.Obligado
 	existing.StoragePath = dto.StoragePath
+	
+	existing.SMTPHost = dto.SMTPHost
+	existing.SMTPPort = dto.SMTPPort
+	existing.SMTPUser = dto.SMTPUser
+	existing.SMTPPassword = encryptedSMTP
 
 	if result.Error == nil {
 		if err := db.GetDB().Save(&existing).Error; err != nil {
