@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"kushkiv2/internal/db"
 	"kushkiv2/pkg/crypto"
+	"kushkiv2/pkg/logger"
 	"os"
 	"path/filepath"
 
@@ -18,6 +19,12 @@ import (
 var assets embed.FS
 
 func main() {
+	// 0. Inicializar Logger
+	if err := logger.Init(); err != nil {
+		fmt.Printf("Advertencia: No se pudo crear el archivo de logs: %v\n", err)
+	}
+	defer logger.Close()
+
 	// 1. Inicializar Seguridad (Cargar o Generar Llave Maestra)
 	cwd, _ := os.Getwd()
 	keyPath := filepath.Join(cwd, "master.key")

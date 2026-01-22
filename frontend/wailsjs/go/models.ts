@@ -33,10 +33,14 @@ export namespace db {
 	    Estab: string;
 	    PtoEmi: string;
 	    Obligado: boolean;
-	    SMTPHost: string;
-	    SMTPUser: string;
-	    SMTPPass: string;
+	    ContribuyenteRimpe: string;
+	    AgenteRetencion: string;
 	    StoragePath: string;
+	    LogoPath: string;
+	    SMTPHost: string;
+	    SMTPPort: number;
+	    SMTPUser: string;
+	    SMTPPassword: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new EmisorConfigDTO(source);
@@ -54,10 +58,14 @@ export namespace db {
 	        this.Estab = source["Estab"];
 	        this.PtoEmi = source["PtoEmi"];
 	        this.Obligado = source["Obligado"];
-	        this.SMTPHost = source["SMTPHost"];
-	        this.SMTPUser = source["SMTPUser"];
-	        this.SMTPPass = source["SMTPPass"];
+	        this.ContribuyenteRimpe = source["ContribuyenteRimpe"];
+	        this.AgenteRetencion = source["AgenteRetencion"];
 	        this.StoragePath = source["StoragePath"];
+	        this.LogoPath = source["LogoPath"];
+	        this.SMTPHost = source["SMTPHost"];
+	        this.SMTPPort = source["SMTPPort"];
+	        this.SMTPUser = source["SMTPUser"];
+	        this.SMTPPassword = source["SMTPPassword"];
 	    }
 	}
 	export class InvoiceItem {
@@ -89,7 +97,10 @@ export namespace db {
 	    clienteDireccion: string;
 	    clienteEmail: string;
 	    clienteTelefono: string;
+	    observacion: string;
 	    formaPago: string;
+	    plazo: string;
+	    unidadTiempo: string;
 	    items: InvoiceItem[];
 	    ClaveAcceso: string;
 	
@@ -105,7 +116,10 @@ export namespace db {
 	        this.clienteDireccion = source["clienteDireccion"];
 	        this.clienteEmail = source["clienteEmail"];
 	        this.clienteTelefono = source["clienteTelefono"];
+	        this.observacion = source["observacion"];
 	        this.formaPago = source["formaPago"];
+	        this.plazo = source["plazo"];
+	        this.unidadTiempo = source["unidadTiempo"];
 	        this.items = this.convertValues(source["items"], InvoiceItem);
 	        this.ClaveAcceso = source["ClaveAcceso"];
 	    }
@@ -153,12 +167,34 @@ export namespace db {
 	    }
 	}
 	
+	export class MailLogDTO {
+	    id: number;
+	    facturaClave: string;
+	    email: string;
+	    estado: string;
+	    mensaje: string;
+	    fecha: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MailLogDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.facturaClave = source["facturaClave"];
+	        this.email = source["email"];
+	        this.estado = source["estado"];
+	        this.mensaje = source["mensaje"];
+	        this.fecha = source["fecha"];
+	    }
+	}
 	export class ProductDTO {
 	    SKU: string;
 	    Name: string;
 	    Price: number;
 	    Stock: number;
-	    TaxCode: number;
+	    TaxCode: string;
 	    TaxPercentage: number;
 	
 	    static createFrom(source: any = {}) {
@@ -180,6 +216,24 @@ export namespace db {
 
 export namespace main {
 	
+	export class BackupDTO {
+	    name: string;
+	    size: string;
+	    date: string;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BackupDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.size = source["size"];
+	        this.date = source["date"];
+	        this.path = source["path"];
+	    }
+	}
 	export class DailySale {
 	    date: string;
 	    total: number;

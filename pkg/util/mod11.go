@@ -24,3 +24,12 @@ func CalcularDigitoModulo11(clave string) int {
 
 	return digitoVerificador
 }
+
+// Round redondea un float64 a la precisión especificada.
+func Round(val float64, precision int) float64 {
+	ratio := 1.0
+	for i := 0; i < precision; i++ {
+		ratio *= 10.0
+	}
+	return float64(int(val*ratio+0.5)) / ratio
+}

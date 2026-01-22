@@ -1,11 +1,12 @@
 <script>
   import { 
-    CreateInvoice, GetEmisorConfig, SaveEmisorConfig, SelectCertificate, SelectStoragePath,
+    CreateInvoice, GetEmisorConfig, SaveEmisorConfig, SelectCertificate, SelectStoragePath, SelectAndSaveLogo,
     GetProducts, SearchProducts, SaveProduct, DeleteProduct,
     GetClients, SearchClients, SaveClient, DeleteClient,
     GetNextSecuencial, GetDashboardStats, GetFacturasPaginated, OpenFacturaPDF,
     OpenInvoiceFolder, OpenInvoiceXML, ExportSalesExcel, ResendInvoiceEmail,
-    GetTopProducts, GetSyncLogs, TriggerSyncManual, CheckLicense, ActivateLicense
+    GetTopProducts, GetSyncLogs, GetMailLogs, TriggerSyncManual, CheckLicense, ActivateLicense,
+    TestSMTPConnection, CreateBackup, GetBackups, SelectBackupPath
   } from '../wailsjs/go/main/App.js'
   import { EventsOn } from '../wailsjs/runtime/runtime.js'
   import { onMount } from 'svelte'
@@ -33,12 +34,17 @@
   let licenseKeyInput = '' // Input para la licencia
   let showWizard = false
   let contentArea
-  let toast = { show: false, message: '', type: 'success' } 
+  
+  // --- NOTIFICACIONES & TOASTS ---
+  let toasts = [] // { id, message, type }
+  let notifications = [] // { id, message, type, time }
+  let showNotifications = false // Toggle para el panel de notificaciones
   let confirmationModal = { show: false, title: '', message: '', onConfirm: null }
 
   // --- CONFIGURACIÓN Y FACTURACIÓN ---
   let config = { RUC: '', RazonSocial: '', NombreComercial: '', Direccion: '', P12Path: '', P12Password: '', Ambiente: 1, Estab: '001', PtoEmi: '001', Obligado: false, StoragePath: '' }
   let invoice = { secuencial: '000000001', clienteID: '', clienteNombre: '', clienteDireccion: '', clienteEmail: '', clienteTelefono: '', formaPago: '01', items: [] }
+  let invoiceErrors = {} // Para rastrear campos inválidos: { clienteID: true, items: true }
   let newItem = { codigo: "", nombre: "", cantidad: 1, precio: 0, codigoIVA: "4", porcentajeIVA: 15 }
   
   let clientSearch = ''
@@ -53,9 +59,44 @@
   let clients = []
   let editingClient = { ID: '', TipoID: '05', Nombre: '', Direccion: '', Email: '', Telefono: '' }
 
-  // --- ESTADO SINCRONIZACIÓN ---
+  // --- ESTADO SINCRONIZACIÓN Y AUDITORÍA ---
   let syncLogs = []
+  let mailLogs = []
   let selectedLog = null
+  let backups = []
+
+  async function refreshSyncLogs() {
+      loading = true
+      try { 
+          const [sLogs, mLogs, bkps] = await Promise.all([GetSyncLogs(), GetMailLogs(), GetBackups()])
+          syncLogs = sLogs || []
+          mailLogs = mLogs || []
+          backups = bkps || []
+      } catch (e) { 
+          console.error(e) 
+      } finally { 
+          loading = false 
+      }
+  }
+
+  async function handleCreateBackup() {
+      loading = true
+      try {
+          const err = await CreateBackup()
+          if (err) showToast("Error: " + err, 'error')
+          else {
+              showToast("Respaldo creado exitosamente", 'success')
+              backups = await GetBackups()
+          }
+      } catch (e) { showToast(e, 'error') }
+      finally { loading = false }
+  }
+
+  async function handleSelectBackupFolder() {
+      const path = await SelectBackupPath()
+      if (path) showToast("Ruta seleccionada: " + path + ". (Recuerde guardar en Configuración)", 'info')
+      // Nota: Idealmente actualizaríamos config.StoragePath aquí si el usuario confirma
+  }
 
   // --- DASHBOARD & HISTORIAL ---
   let stats = { totalVentas: 0, totalFacturas: 0, pendientes: 0, sriOnline: true, salesTrend: [] }
@@ -79,11 +120,18 @@
   $: if (activeTab && contentArea) contentArea.scrollTop = 0
 
   onMount(() => {
+      // Timeout de seguridad por si el backend tarda demasiado
+      const safetyTimer = setTimeout(() => {
+          initialLoading = false;
+          loading = false;
+      }, 8000);
+
       // Cargar datos y manejar Splash Screen
-      loadData().then(() => {
+      loadData().finally(() => {
+          clearTimeout(safetyTimer);
           setTimeout(() => {
               initialLoading = false;
-          }, 2000); // 2 segundos de splash screen para efecto visual
+          }, 2000); 
       });
       
       EventsOn("toast-notification", (data) => {
@@ -99,8 +147,6 @@
       const licensed = await CheckLicense()
       if (!licensed) {
           isLicensed = false
-          loading = false
-          // Si no está licenciado, permitimos que initialLoading termine para mostrar el panel de licencia
           return 
       }
       isLicensed = true
@@ -139,10 +185,16 @@
   }
 
   async function handleActivation() {
-      if (!licenseKeyInput) return showToast("Ingresa una licencia válida", "error");
+      const licenseRegex = /^KSH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+      const key = licenseKeyInput.trim().toUpperCase();
+      
+      if (!licenseRegex.test(key)) {
+          return showToast("Formato inválido. Debe ser KSH-XXXX-XXXX-XXXX", "error");
+      }
+
       loading = true;
       try {
-          const res = await ActivateLicense(licenseKeyInput);
+          const res = await ActivateLicense(key);
           if (res.startsWith("Éxito")) {
               showToast(res, "success");
               isLicensed = true;
@@ -181,9 +233,18 @@
   dateRange.end = new Date().toISOString().split('T')[0]
 
   async function refreshDashboard() {
-      stats = await GetDashboardStats()
-      await loadFacturasPage()
-      topProducts = await GetTopProducts() || []
+      try {
+          stats = await GetDashboardStats(dateRange.start, dateRange.end)
+          await loadFacturasPage()
+          topProducts = await GetTopProducts() || []
+      } catch (e) {
+          console.error("Error refreshing dashboard:", e)
+      }
+  }
+
+  // Auto-refrescar cuando cambian las fechas
+  $: if (dateRange.start || dateRange.end) {
+      if (isLicensed) refreshDashboard();
   }
 
   async function loadFacturasPage() {
@@ -219,8 +280,21 @@
   }
 
   function showToast(message, type = 'success') {
-    toast = { show: true, message, type }
-    setTimeout(() => toast.show = false, 4000)
+    const id = Date.now() + Math.random();
+    
+    // 1. Agregar a Toast Stack (UI Efímera)
+    toasts = [...toasts, { id, message, type }]
+    if (toasts.length > 3) {
+        toasts = toasts.slice(1) // Mantener solo los 3 más recientes
+    }
+    
+    // Auto-eliminar después de 6 segundos
+    setTimeout(() => {
+        toasts = toasts.filter(t => t.id !== id)
+    }, 6000)
+
+    // 2. Agregar a Historial de Notificaciones (Persistente en sesión)
+    notifications = [{ id, message, type, time: new Date() }, ...notifications]
   }
 
   function showConfirmation(title, message, callback) {
@@ -242,10 +316,26 @@
     if (path) config.StoragePath = path
   }
 
+  async function handleTestSMTP() {
+      if (!config.SMTPHost || !config.SMTPUser || !config.SMTPPassword) {
+          return showToast("Complete los datos de correo primero", "error");
+      }
+      loading = true;
+      try {
+          const res = await TestSMTPConnection(config);
+          showToast(res, res.includes('Error') ? 'error' : 'success');
+      } catch (e) {
+          showToast("Fallo crítico: " + e, "error");
+      } finally {
+          loading = false;
+      }
+  }
+
   async function handleSaveConfig() {
     loading = true
     try {
       config.Ambiente = parseInt(config.Ambiente)
+      config.SMTPPort = parseInt(config.SMTPPort)
       const res = await SaveEmisorConfig(config)
       if (res.startsWith("Error")) showToast(res, 'error')
       else showToast(res, 'success')
@@ -321,11 +411,6 @@
     clientSearch = ""
   }
 
-  async function refreshSyncLogs() {
-      loading = true
-      try { syncLogs = await GetSyncLogs() } catch (e) { console.error(e) } finally { loading = false }
-  }
-
   async function handleSyncNow() {
       const msg = await TriggerSyncManual()
       showToast(msg, 'info')
@@ -348,10 +433,25 @@
   }
 
   async function handleEmit() {
-    if (!invoice.clienteID || invoice.items.length === 0) {
-      showToast("Ingrese cliente y al menos un producto", 'error')
+    // Reset errores
+    invoiceErrors = {}
+    let isValid = true
+
+    if (!invoice.clienteID) { invoiceErrors.clienteID = true; isValid = false; }
+    if (!invoice.clienteNombre) { invoiceErrors.clienteNombre = true; isValid = false; }
+    if (!invoice.clienteDireccion) { invoiceErrors.clienteDireccion = true; isValid = false; }
+    if (!invoice.clienteEmail || !invoice.clienteEmail.includes('@')) { invoiceErrors.clienteEmail = true; isValid = false; }
+    
+    if (invoice.items.length === 0) { 
+        showToast("Agregue al menos un producto", 'error')
+        return
+    }
+
+    if (!isValid) {
+      showToast("Por favor complete los campos obligatorios marcados en rojo", 'error')
       return
     }
+
     loading = true
     try {
       const dto = {
@@ -361,6 +461,7 @@
         clienteDireccion: invoice.clienteDireccion,
         clienteEmail: invoice.clienteEmail,
         clienteTelefono: invoice.clienteTelefono,
+        observacion: invoice.observacion,
         formaPago: invoice.formaPago,
         items: invoice.items.map(i => ({
             codigo: i.codigo, nombre: i.nombre, cantidad: parseFloat(i.cantidad),
@@ -408,17 +509,16 @@
               <p>Bienvenido al Sistema de Facturación Kushki. <br>Ingresa tu clave de producto para continuar.</p>
               
               <div class="license-form">
-                  <input bind:value={licenseKeyInput} placeholder="Ingresa tu licencia aquí (Ej: PRO-2026-X)" class="text-center" />
+                  <input 
+                    bind:value={licenseKeyInput} 
+                    placeholder="KSH-XXXX-XXXX-XXXX" 
+                    class="text-center" 
+                    on:input={(e) => licenseKeyInput = e.target.value.toUpperCase()}
+                  />
                   <button class="btn-primary full-width" on:click={handleActivation} disabled={loading}>
                       {loading ? 'Verificando con Servidor...' : 'Activar Licencia'}
                   </button>
               </div>
-
-              {#if toast.show}
-                  <div class="toast-inline {toast.type}" transition:slide>
-                      {toast.message}
-                  </div>
-              {/if}
           </div>
       </div>
   {:else}
@@ -432,7 +532,42 @@
                 <h1>Hola, {config.RazonSocial || 'Emisor'} 👋</h1>
                 <p class="subtitle">Aquí tienes el resumen de tu facturación.</p>
             </div>
-            <button class="btn-icon-soft" on:click={refreshDashboard} title="Actualizar">🔄</button>
+            <div class="header-actions">
+                <div class="notification-wrapper">
+                    <button class="btn-icon-soft" on:click={() => showNotifications = !showNotifications} title="Notificaciones">
+                        🔔
+                        {#if notifications.length > 0}<span class="notification-badge"></span>{/if}
+                    </button>
+                    
+                    {#if showNotifications}
+                        <div class="notification-panel" transition:fly={{ y: 10, duration: 200 }}>
+                            <div class="notif-header">
+                                <h4>Notificaciones</h4>
+                                <button class="link-btn-small" on:click={() => notifications = []}>Borrar todo</button>
+                            </div>
+                            <div class="notif-list">
+                                {#each notifications as n}
+                                    <div class="notif-item {n.type}">
+                                        <div class="notif-msg">{n.message}</div>
+                                        <div class="notif-time">{n.time.toLocaleTimeString()}</div>
+                                    </div>
+                                {/each}
+                                {#if notifications.length === 0}
+                                    <div class="empty-notif">No hay notificaciones recientes</div>
+                                {/if}
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+
+                <div class="date-selector">
+                    <span class="label-tiny">Desde</span>
+                    <input type="date" bind:value={dateRange.start} class="input-tiny" />
+                    <span class="label-tiny">Hasta</span>
+                    <input type="date" bind:value={dateRange.end} class="input-tiny" />
+                </div>
+                <button class="btn-icon-soft" on:click={refreshDashboard} title="Actualizar">🔄</button>
+            </div>
         </div>
         
         <div class="kpi-row">
@@ -601,7 +736,21 @@
       <div class="panel" in:fade={{ duration: 100 }}>
         <div class="header-row">
           <h1>Emitir Factura</h1>
-          <div class="badge-pill">Ambiente: {config.Ambiente === 1 ? 'PRUEBAS' : 'PRODUCCIÓN'}</div>
+          <!-- Selector de Ambiente Interactivo -->
+          <div class="environment-toggle">
+              <span class="label">Ambiente:</span>
+              <button 
+                  class="toggle-btn {config.Ambiente === 1 ? 'test' : 'prod'}" 
+                  on:click={async () => {
+                      config.Ambiente = config.Ambiente === 1 ? 2 : 1;
+                      await handleSaveConfig();
+                      showToast(`Cambiado a entorno de ${config.Ambiente === 1 ? 'PRUEBAS' : 'PRODUCCIÓN'}`, 'info');
+                  }}
+                  title="Clic para cambiar entorno"
+              >
+                  {config.Ambiente === 1 ? '🧪 PRUEBAS' : '🚀 PRODUCCIÓN'}
+              </button>
+          </div>
         </div>
 
         <!-- SECCIÓN 1: DATOS DEL CLIENTE -->
@@ -633,19 +782,19 @@
           <div class="client-grid">
             <div class="field">
                 <label>Identificación</label>
-                <input bind:value={invoice.clienteID} placeholder="1712345678" />
+                <input bind:value={invoice.clienteID} class={invoiceErrors.clienteID ? 'invalid' : ''} placeholder="1712345678" />
             </div>
             <div class="field span-2">
                 <label>Razón Social</label>
-                <input bind:value={invoice.clienteNombre} placeholder="Nombre Cliente" />
+                <input bind:value={invoice.clienteNombre} class={invoiceErrors.clienteNombre ? 'invalid' : ''} placeholder="Nombre Cliente" />
             </div>
             <div class="field">
                 <label>Email</label>
-                <input bind:value={invoice.clienteEmail} placeholder="cliente@email.com" type="email" />
+                <input bind:value={invoice.clienteEmail} class={invoiceErrors.clienteEmail ? 'invalid' : ''} placeholder="cliente@email.com" type="email" />
             </div>
             <div class="field span-2">
                 <label>Dirección</label>
-                <input bind:value={invoice.clienteDireccion} placeholder="Dirección completa" />
+                <input bind:value={invoice.clienteDireccion} class={invoiceErrors.clienteDireccion ? 'invalid' : ''} placeholder="Dirección completa" />
             </div>
             <div class="field">
                 <label>Teléfono</label>
@@ -733,7 +882,7 @@
         <div class="footer-panel">
             <div class="notes-area">
                 <label>Notas Adicionales (Opcional)</label>
-                <textarea placeholder="Ej: Entregar en recepción..."></textarea>
+                <textarea bind:value={invoice.observacion} placeholder="Ej: Entregar en recepción..."></textarea>
             </div>
             <div class="totals-area">
                 <div class="total-row">
@@ -929,10 +1078,29 @@
                 </div>
             </div>
 
-            <!-- SECCIÓN FIRMA Y RUTAS -->
+            <!-- SECCIÓN FIRMA Y LOGO -->
             <div class="card config-card">
-                <h3>🔐 Firma Electrónica</h3>
+                <h3>🔐 Firma y Marca</h3>
                 <div class="form-stack">
+                    <div class="field">
+                        <label>Logo de Empresa</label>
+                        <div class="logo-preview-container">
+                            {#if config.LogoPath}
+                                <img src="{config.LogoPath.startsWith('/') ? 'file://' + config.LogoPath : config.LogoPath}" alt="Logo" class="logo-preview" />
+                            {:else}
+                                <div class="logo-placeholder">Sin Logo</div>
+                            {/if}
+                            <div class="logo-actions">
+                                <button class="btn-secondary compact" on:click={async () => {
+                                    const path = await SelectAndSaveLogo();
+                                    if (path && !path.startsWith("Error")) config.LogoPath = path;
+                                    else if(path) showToast(path, 'error');
+                                }}>📷 Subir Logo</button>
+                                <small class="hint">Se ajustará automáticamente (Max 400px)</small>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="field">
                         <label>Archivo .p12</label>
                         <div class="input-group">
@@ -964,7 +1132,41 @@
                 </div>
             </div>
 
-            <!-- SECCIÓN CORREO ELIMINADA (Gestionado por API Cloud) -->
+            <!-- SECCIÓN CORREO (SMTP LOCAL) -->
+            <div class="card config-card">
+                <h3>📧 Correo (SMTP)</h3>
+                <div class="form-stack">
+                    <div class="smtp-presets">
+                        <button class="preset-btn gmail" on:click={() => { config.SMTPHost = 'smtp.gmail.com'; config.SMTPPort = 587; }}>Gmail</button>
+                        <button class="preset-btn outlook" on:click={() => { config.SMTPHost = 'smtp.office365.com'; config.SMTPPort = 587; }}>Outlook</button>
+                    </div>
+                    
+                    <div class="field">
+                        <label>Servidor SMTP</label>
+                        <input bind:value={config.SMTPHost} placeholder="smtp.gmail.com" />
+                    </div>
+                    <div class="grid col-2-tight">
+                        <div class="field">
+                            <label>Puerto</label>
+                            <input type="number" bind:value={config.SMTPPort} placeholder="587" />
+                        </div>
+                        <div class="field">
+                            <label>Usuario</label>
+                            <input bind:value={config.SMTPUser} placeholder="tu@email.com" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Contraseña / App Password</label>
+                        <input type="password" bind:value={config.SMTPPassword} placeholder="••••••••" />
+                        <small class="hint">Usa una "Contraseña de Aplicación" si usas Gmail/Outlook.</small>
+                    </div>
+                    <div class="form-actions mt-1">
+                        <button class="btn-secondary full-width" on:click={handleTestSMTP} disabled={loading}>
+                            {loading ? 'Probando...' : '🧪 Probar Conexión'}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="actions-right">
@@ -977,31 +1179,119 @@
     {:else if activeTab === 'sync'}
       <div class="panel full-height" in:fade={{ duration: 100 }}>
         <div class="header-row">
-            <h1>Estado de Sincronización</h1>
-            <div class="header-actions"><button class="btn-secondary" on:click={refreshSyncLogs}>🔄 Refrescar Logs</button><button class="btn-primary" on:click={handleSyncNow}>🚀 Sincronizar Ahora</button></div>
-        </div>
-        <div class="sync-container">
-            <div class="log-list card scrollable">
-                <h3>Historial</h3>
-                {#if syncLogs.length === 0}<div class="empty-state">Sin registros</div>
-                {:else}
-                    {#each syncLogs as log (log.id)}
-                        <!-- svelte-ignore a11y-click-events-have-key-events -->
-                        <div class="log-item {selectedLog === log ? 'active' : ''}" on:click={() => selectedLog = log}>
-                            <div class="log-header"><span class="timestamp">{log.timestamp}</span><span class="badge {log.status}">{log.status}</span></div>
-                            <div class="log-title">{log.action}</div><div class="log-detail">{log.detail}</div>
-                        </div>
-                    {/each}
-                {/if}
+            <h1>Panel de Actividad y Auditoría</h1>
+            <div class="header-actions">
+                <button class="btn-secondary" on:click={refreshSyncLogs}>🔄 Refrescar Todo</button>
+                <button class="btn-primary" on:click={handleSyncNow}>🚀 Sync SRI Manual</button>
             </div>
-            <div class="log-detail-panel card">
-                {#if selectedLog}
-                    <h3>Detalle</h3>
-                    <div class="detail-grid">
-                        <div class="detail-section"><label>Petición</label><div class="code-block"><pre>{formatJSON(selectedLog.request)}</pre></div></div>
-                        <div class="detail-section"><label>Respuesta</label><div class="code-block"><pre>{formatJSON(selectedLog.response)}</pre></div></div>
-                    </div>
-                {:else}<div class="empty-selection"><p>Selecciona un evento</p></div>{/if}
+        </div>
+
+        <div class="activity-grid">
+            <!-- Sección 1: Historial de Correos -->
+            <div class="card no-padding">
+                <div class="table-header">
+                    <h3>✉️ Historial de Correos Enviados</h3>
+                    <span class="badge-pill">{mailLogs.length} registros</span>
+                </div>
+                <div class="table-body-scroll" style="max-height: 300px;">
+                    <table class="dense-table">
+                        <thead>
+                            <tr>
+                                <th>Estado</th>
+                                <th>Fecha</th>
+                                <th>Destinatario</th>
+                                <th>Mensaje</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {#each mailLogs as ml}
+                                <tr>
+                                    <td><span class="badge {ml.estado}">{ml.estado}</span></td>
+                                    <td class="text-small mono">{ml.fecha}</td>
+                                    <td>{ml.email}</td>
+                                    <td class="text-small italic">{ml.mensaje}</td>
+                                </tr>
+                            {/each}
+                            {#if mailLogs.length === 0}
+                                <tr><td colspan="4" class="empty-row">No hay envíos registrados aún</td></tr>
+                            {/if}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Sección 2: Logs del Sistema -->
+            <div class="sync-container" style="margin-top: 1rem;">
+                <div class="log-list card scrollable">
+                    <h3>⚙️ Eventos de Sincronización</h3>
+                    {#if syncLogs.length === 0}<div class="empty-state">Sin registros</div>
+                    {:else}
+                        {#each syncLogs as log (log.id)}
+                            <!-- svelte-ignore a11y-click-events-have-key-events -->
+                            <div class="log-item {selectedLog === log ? 'active' : ''}" on:click={() => selectedLog = log}>
+                                <div class="log-header"><span class="timestamp">{log.timestamp}</span><span class="badge {log.status}">{log.status}</span></div>
+                                <div class="log-title">{log.action}</div><div class="log-detail">{log.detail}</div>
+                            </div>
+                        {/each}
+                    {/if}
+                </div>
+                <div class="log-detail-panel card">
+                    {#if selectedLog}
+                        <h3>Detalle Técnico</h3>
+                        <div class="detail-grid">
+                            <div class="detail-section"><label>Petición</label><div class="code-block"><pre>{formatJSON(selectedLog.request)}</pre></div></div>
+                            <div class="detail-section"><label>Respuesta</label><div class="code-block"><pre>{formatJSON(selectedLog.response)}</pre></div></div>
+                        </div>
+                    {:else}<div class="empty-selection"><p>Selecciona un evento de la lista para ver el JSON</p></div>{/if}
+                </div>
+            </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if activeTab === 'backups'}
+      <div class="panel full-height" in:fade={{ duration: 100 }}>
+        <div class="header-row">
+            <h1>Copias de Seguridad</h1>
+            <button class="btn-primary" on:click={handleCreateBackup} disabled={loading}>
+                💾 Crear Respaldo Ahora
+            </button>
+        </div>
+
+        <div class="card config-card mb-1">
+            <h3>📂 Configuración de Almacenamiento</h3>
+            <div class="field">
+                <label>Ruta de Respaldos</label>
+                <div class="input-group">
+                    <input value={config.StoragePath ? config.StoragePath + '/Backups' : 'Carpeta de Usuario/Backups'} readonly />
+                    <button class="btn-secondary" on:click={handleSelectStorage} title="Cambiar Ruta Base">📂</button>
+                </div>
+                <small class="hint">Los respaldos se guardan en una subcarpeta "Backups" dentro de tu ruta de almacenamiento principal.</small>
+            </div>
+        </div>
+
+        <div class="card no-padding">
+            <div class="table-header">
+                <h3>Historial de Respaldos</h3>
+                <span class="badge-pill">{backups.length} archivos</span>
+            </div>
+            <div class="table-body-scroll">
+                <table class="dense-table">
+                    <thead><tr><th>Archivo</th><th>Fecha</th><th>Tamaño</th><th>Ruta</th></tr></thead>
+                    <tbody>
+                        {#each backups as b}
+                            <tr>
+                                <td class="bold">{b.name}</td>
+                                <td class="mono text-small">{b.date}</td>
+                                <td>{b.size}</td>
+                                <td class="text-small italic" style="max-width: 200px; overflow:hidden; text-overflow:ellipsis;">{b.path}</td>
+                            </tr>
+                        {/each}
+                        {#if backups.length === 0}
+                            <tr><td colspan="4" class="empty-row">No hay respaldos generados</td></tr>
+                        {/if}
+                    </tbody>
+                </table>
             </div>
         </div>
       </div>
@@ -1019,6 +1309,15 @@
   
   <Wizard show={showWizard} on:complete={onWizardComplete} />
   {/if}
+
+  <!-- TOAST STACK CONTAINER -->
+  <div class="toast-container">
+      {#each toasts as t (t.id)}
+          <div class="toast-card {t.type}" transition:fly={{ x: 20, duration: 300 }} animate:flip>
+              {t.message}
+          </div>
+      {/each}
+  </div>
 </main>
 
 <style>
@@ -1109,8 +1408,15 @@
   .field { display: flex; flex-direction: column; gap: 6px; } .input-group { display: flex; gap: 8px; }
   .search-input { background: #0f1523; border: none; padding: 8px 12px; color: white; border-radius: 6px; }
   .search-input.full-width { width: 100%; font-size: 1rem; padding: 12px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); }
-  .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #1e293b; border: 1px solid #34d399; border-radius: 0 0 8px 8px; z-index: 10; max-height: 200px; overflow-y: auto; }
-  .dropdown button { width: 100%; padding: 10px; background: transparent; border: none; color: white; text-align: left; cursor: pointer; }
+  .dropdown { 
+      position: absolute; top: 100%; left: 0; right: 0; 
+      background: #1e293b; border: 1px solid #34d399; 
+      border-radius: 0 0 8px 8px; z-index: 1000; 
+      max-height: 250px; overflow-y: auto; 
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  }
+  .dropdown button { width: 100%; padding: 12px; background: transparent; border: none; color: white; text-align: left; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .dropdown button:hover { background: rgba(52, 211, 153, 0.1); }
   .chart-container { height: 250px; display: flex; align-items: flex-end; justify-content: center; padding-top: 20px; }
   .bar-chart { display: flex; align-items: flex-end; gap: 15px; height: 100%; width: 100%; }
   .bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; }
@@ -1119,7 +1425,9 @@
   .grow { flex: 1; } .small { width: 80px; } .medium { width: 120px; }
   table { width: 100%; border-collapse: collapse; } th { text-align: left; color: #64748b; font-size: 0.8rem; padding: 10px; border-bottom: 1px solid #334155; } td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
   .badge { padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
-  .badge.AUTORIZADO { background: rgba(52, 211, 153, 0.1); color: var(--primary-mint); }
+  .badge.AUTORIZADO, .badge.SUCCESS { background: rgba(52, 211, 153, 0.1); color: var(--primary-mint); }
+  .badge.FAILED, .badge.ERROR { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+  .badge.PENDIENTE, .badge.INFO { background: rgba(251, 191, 36, 0.1); color: #fbbf24; }
   .modal-overlay { position: fixed; inset: 0; background: rgba(11, 15, 25, 0.7); display: flex; align-items: center; justify-content: center; z-index: 150; }
   .modal-card { background: #161e31; padding: 2rem; border-radius: 12px; width: 400px; }
   .dashboard-layout { display: flex; flex-direction: column; gap: 1.5rem; }
@@ -1163,9 +1471,11 @@
   .client-grid { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 1rem; margin-top: 1rem; }
   .span-2 { grid-column: span 2; }
   .full-search-input { width: 100%; font-size: 1rem; padding: 12px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; }
+  
+  .search-container { position: relative; } /* Fix: Dropdown positioning context */
 
   .add-product-bar { display: flex; gap: 10px; background: #0f1523; padding: 12px; border-radius: 12px; align-items: center; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 1rem; flex-wrap: wrap; }
-  .search-box-product { flex: 2; position: relative; min-width: 200px; }
+  .search-box-product { flex: 2; position: relative; min-width: 200px; } /* Already has relative, confirming */
   .search-box-product input { background: transparent; border: none; border-bottom: 1px solid #475569; padding: 8px; width: 100%; color: white; }
   
   .input-code { width: 80px; }
@@ -1308,5 +1618,67 @@
     }
     .toast-inline.error { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
     .toast-inline.success { background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+
+    /* TOAST STACK */
+    .toast-container {
+        position: fixed; top: 20px; right: 20px; z-index: 10000;
+        display: flex; flex-direction: column; gap: 10px;
+        max-width: 350px;
+    }
+    .toast-card {
+        padding: 14px 20px; border-radius: 8px; font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        background: #1e293b; color: white; border-left: 4px solid #64748b;
+        font-size: 0.9rem;
+    }
+    .toast-card.success { border-left-color: #34d399; background: rgba(6, 78, 59, 0.95); }
+    .toast-card.error { border-left-color: #ef4444; background: rgba(127, 29, 29, 0.95); }
+    .toast-card.info { border-left-color: #60a5fa; background: rgba(30, 58, 138, 0.95); }
+
+    /* NOTIFICATION PANEL */
+    .notification-wrapper { position: relative; }
+    .notification-badge { position: absolute; top: 0; right: 0; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; border: 2px solid #161e31; }
+    
+    .notification-panel {
+        position: absolute; top: 100%; right: 0; width: 300px; margin-top: 10px;
+        background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 200; overflow: hidden;
+    }
+    .notif-header { padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; background: #0f172a; }
+    .notif-header h4 { margin: 0; font-size: 0.9rem; color: #e2e8f0; }
+    .link-btn-small { background: none; border: none; color: #94a3b8; font-size: 0.75rem; cursor: pointer; }
+    .link-btn-small:hover { color: #fff; text-decoration: underline; }
+    
+    .notif-list { max-height: 300px; overflow-y: auto; }
+    .notif-item { padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; }
+    .notif-item:hover { background: rgba(255,255,255,0.03); }
+    .notif-item.error .notif-msg { color: #fca5a5; }
+    .notif-item.success .notif-msg { color: #86efac; }
+    .notif-msg { font-size: 0.85rem; margin-bottom: 4px; line-height: 1.4; }
+    .notif-time { font-size: 0.7rem; color: #64748b; }
+    .empty-notif { padding: 20px; text-align: center; color: #64748b; font-size: 0.85rem; font-style: italic; }
+
+    /* Logo Styles */
+    .logo-preview-container { display: flex; align-items: center; gap: 15px; margin-bottom: 10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; }
+    .logo-preview { width: 60px; height: 60px; object-fit: contain; border-radius: 4px; background: white; }
+    .logo-placeholder { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); border-radius: 4px; font-size: 0.7rem; color: #94a3b8; border: 1px dashed #475569; }
+    .logo-actions { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+
+    /* Environment Toggle */
+    .environment-toggle { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.2); padding: 4px 6px 4px 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); }
+    .environment-toggle .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
+    .environment-toggle .toggle-btn { 
+        border: none; padding: 6px 16px; border-radius: 16px; font-weight: 700; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .environment-toggle .toggle-btn.test { background: #fbbf24; color: #78350f; } /* Amber for Test */
+    .environment-toggle .toggle-btn.prod { background: #34d399; color: #064e3b; } /* Mint for Prod */
+    .environment-toggle .toggle-btn:hover { transform: scale(1.05); filter: brightness(1.1); }
+
+    /* SMTP Presets */
+    .smtp-presets { display: flex; gap: 8px; margin-bottom: 10px; }
+    .preset-btn { border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #cbd5e1; font-size: 0.75rem; padding: 4px 10px; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+    .preset-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+    .preset-btn.gmail:hover { border-color: #ef4444; color: #ef4444; }
+    .preset-btn.outlook:hover { border-color: #3b82f6; color: #3b82f6; }
   
   </style>

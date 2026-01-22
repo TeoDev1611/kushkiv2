@@ -1,70 +1,67 @@
-# Kushki Facturador v2.0 🚀
+# Kushki Facturador v2.5 - Professional Edition 🚀
 
-![Status](https://img.shields.io/badge/Estado-Producción_Q1_2026-success)
-![Tech](https://img.shields.io/badge/Stack-Go_Wails_Svelte-blue)
-![Security](https://img.shields.io/badge/Licencia-Node_Locked-orange)
+![Status](https://img.shields.io/badge/Estado-Producción_Estable-success)
+![Version](https://img.shields.io/badge/Versión-2.5.0-blue)
+![Licencia](https://img.shields.io/badge/Licencia-Node_Locked-orange)
 
-Sistema de facturación electrónica de escritorio para Ecuador, diseñado para alta eficiencia, seguridad robusta y experiencia de usuario moderna ("Obsidian & Mint").
+Sistema de facturación electrónica de escritorio para Ecuador, diseñado con una arquitectura híbrida (Go + Svelte) que prioriza la autonomía del usuario, la seguridad de datos y una experiencia visual moderna.
 
-## ✨ Características Principales
+## 🌟 Características Destacadas
 
-*   **Arquitectura Híbrida Segura:** Aplicación de escritorio (Go/Wails) con validación de licenciamiento y servicios en la nube (API Deno).
-*   **Licenciamiento Node-Locked:** El sistema se vincula al hardware específico del usuario, impidiendo copias no autorizadas.
-*   **Emisión "Zero-Config" de Correos:** Envío de comprobantes PDF vía API Cloud, eliminando la compleja configuración de SMTP local para el usuario.
-*   **Firma Electrónica Nativa:** Implementación pura en Go (XAdES-BES) sin dependencias de Java o librerías externas pesadas.
-*   **Dashboard en Tiempo Real:** Métricas de ventas, estado del SRI y tendencias gráficas.
-*   **Base de Datos Local:** SQLite con GORM para persistencia rápida y segura de comprobantes.
-*   **Modo Offline Resiliente:** Permite facturar y firmar localmente (la sincronización requiere internet).
+### 🎨 Experiencia de Usuario (UX)
+*   **Interfaz "Obsidian & Mint":** Diseño oscuro moderno con acentos visuales claros para estados (Éxito, Error, Pendiente).
+*   **Dashboard Dinámico:** Gráficos de tendencias y KPIs filtrables por rangos de fecha personalizados.
+*   **Feedback Visual:** Validaciones de formulario en tiempo real e indicadores de estado.
+
+### 📧 Autonomía Total (SMTP Local)
+*   **Sin Dependencias:** Envío de correos utilizando el servidor SMTP del propio usuario (Gmail, Outlook, Corporativo).
+*   **Plantillas HTML:** Correos electrónicos profesionales con resumen de factura y adjunto PDF.
+*   **Verificación:** Herramienta integrada para probar credenciales de correo.
+
+### 🛡️ Seguridad y Auditoría
+*   **Licenciamiento por Hardware:** Protección contra copias no autorizadas.
+*   **Centro de Actividad:** Registro inmutable de cada correo enviado y evento de sincronización con el SRI.
+*   **Respaldos Locales:** Generación de copias de seguridad (.zip) de base de datos y archivos XML/PDF con un clic.
+
+### 🇪🇨 Cumplimiento SRI (2025-2026)
+*   **Validaciones Estrictas:** Control de decimales, plazos de pago y montos máximos para consumidor final.
+*   **Soporte Completo:** Manejo de RIMPE, Agentes de Retención y XML v1.1.0.
+*   **Firma Electrónica:** Motor de firma XAdES-BES nativo (sin Java).
+
+## 📚 Documentación
+
+La documentación detallada se encuentra en la carpeta `docs/`:
+
+1.  [Introducción y Alcance](docs/01-introduccion.md)
+2.  [Instalación y Configuración](docs/02-instalacion-configuracion.md)
+3.  [Manual de Interfaz](docs/03-interfaz-usuario.md)
+4.  [Herramientas Avanzadas (Backups/Logs)](docs/04-herramientas-avanzadas.md)
+5.  [Arquitectura Técnica](docs/05-arquitectura-tecnica.md)
+6.  [Soporte Técnico y FAQ](docs/06-soporte-faq.md)
 
 ## 🛠️ Stack Tecnológico
 
-| Componente | Tecnología | Descripción |
-| :--- | :--- | :--- |
-| **Frontend** | Svelte + Vite | Interfaz reactiva, rápida y ligera. |
-| **Backend Desktop** | Go 1.24 (Wails) | Lógica de negocio, firma XML, base de datos. |
-| **Cloud API** | Deno (Oak) | Microservicio de Licenciamiento y Envío de Correos. |
-| **Database** | SQLite + GORM | Almacenamiento local de facturas y configuración. |
-| **Reportes** | Maroto (PDF) | Generación de RIDE vectorial de alta calidad. |
+*   **Core:** Go 1.24 (Backend), Wails v2 (Bridge).
+*   **UI:** Svelte + Vite (Frontend).
+*   **Datos:** SQLite + GORM (ORM).
+*   **Reportes:** Maroto (PDF Engine).
 
-## 🚀 Instalación y Uso
+## 🚀 Inicio Rápido (Desarrollo)
 
-### Prerrequisitos
-*   Go 1.21+
-*   Node.js 18+
-*   Wails v2 (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
-
-### Ejecución en Desarrollo
 ```bash
+# Instalar dependencias
+go mod tidy
+cd frontend && npm install && cd ..
+
+# Ejecutar en modo dev
 wails dev
 ```
 
-### Compilación (Producción)
+## 📦 Compilación (Producción)
+
 ```bash
 wails build
 ```
 
-## 🔒 Flujo de Seguridad y Activación
-
-1.  **Instalación:** Al abrir la app por primera vez, se mostrará el **Panel de Activación**.
-2.  **Activación:** El usuario ingresa su Clave de Producto. El sistema genera un `MachineID` único y lo valida contra la Nube.
-3.  **Configuración:** Si la activación es exitosa, se inicia el **Asistente de Configuración** (Wizard) obligatorio para cargar RUC y Firma Electrónica.
-4.  **Uso:** El Dashboard se desbloquea solo con una licencia válida y configuración completa.
-
-## 📂 Estructura del Proyecto
-
-```
-kushkiv2/
-├── app.go                 # Controlador principal (Bridge Frontend-Backend)
-├── frontend/              # UI Svelte
-├── internal/
-│   ├── db/                # Modelos GORM y Migraciones
-│   └── service/
-│       ├── cloud_service.go  # Cliente API Deno (Licencias/Email)
-│       ├── invoice_service.go # Lógica de Facturación SRI
-│       └── report_service.go  # Generación PDF/Excel
-└── pkg/                   # Librerías Core (Firma XAdES, XML, SRI SOAP)
-```
-
-## 📝 Licencia
-
-Este software es propietario y requiere una licencia comercial activa para su funcionamiento. Protegido por sistema de validación de hardware.
+---
+**Desarrollado con ❤️ para Ecuador.**

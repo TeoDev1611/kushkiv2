@@ -11,7 +11,10 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
+
+	"kushkiv2/pkg/crypto"
 )
 
 // CloudService maneja la comunicación con el backend en Deno (Licenciamiento y Reportes)
@@ -23,8 +26,8 @@ type CloudService struct {
 // NewCloudService crea una nueva instancia del servicio
 func NewCloudService() *CloudService {
 	return &CloudService{
-		// URL por defecto (puede ser movida a configuración)
-		BaseURL: "https://mi-api-deno.deno.dev",
+		// URL obtenida de configuración segura
+		BaseURL: crypto.GetAPIURL(),
 		Client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -67,6 +70,9 @@ func (s *CloudService) ActivateLicense(licenseKey string) (*LicenseResponse, err
 	if err != nil {
 		return nil, err
 	}
+
+	// Limpiar espacios en blanco comunes en copy-paste
+	licenseKey = strings.TrimSpace(licenseKey)
 
 	reqBody := LicenseRequest{
 		LicenseKey: licenseKey,
@@ -114,6 +120,11 @@ func (s *CloudService) ActivateLicense(licenseKey string) (*LicenseResponse, err
 		return nil, fmt.Errorf("error decodificando respuesta exitosa: %w", err)
 	}
 
+	// Validar la firma del token recibido inmediatamente
+	if err := crypto.VerifyLicenseToken(successResp.Token); err != nil {
+		return nil, fmt.Errorf("seguridad: el token recibido no es auténtico: %v", err)
+	}
+
 	return &successResp, nil
 }
 
@@ -144,7 +155,7 @@ func (s *CloudService) SendPDFReport(email string, pdfContent []byte, filename s
 	}
 
 	// Enviar Petición
-	url := fmt.Sprintf("%s/enviar-pdf", s.BaseURL)
+	url := fmt.Sprintf("%s/api/v1/mail/send-pdf", s.BaseURL)
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
 		return fmt.Errorf("error creando request multipart: %w", err)

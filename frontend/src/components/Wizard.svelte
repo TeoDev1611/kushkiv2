@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { SelectCertificate, SelectStoragePath, SaveEmisorConfig } from '../../wailsjs/go/main/App.js';
+  import { SelectCertificate, SelectStoragePath, SaveEmisorConfig, SelectAndSaveLogo } from '../../wailsjs/go/main/App.js';
   
   export let show = false;
   const dispatch = createEventDispatcher();
@@ -17,6 +17,9 @@
       Estab: '001',
       PtoEmi: '001',
       Obligado: false,
+      ContribuyenteRimpe: '',
+      AgenteRetencion: '',
+      LogoPath: '',
       SMTPHost: '',
       SMTPPort: 587,
       SMTPUser: '',
@@ -34,6 +37,15 @@
   async function handleSelectStorage() {
       const path = await SelectStoragePath();
       if (path) config.StoragePath = path;
+  }
+
+  async function handleSelectLogo() {
+      const path = await SelectAndSaveLogo();
+      if (path && !path.startsWith("Error")) {
+          config.LogoPath = path;
+      } else if (path) {
+          alert(path);
+      }
   }
 
   async function finishSetup() {
@@ -88,6 +100,17 @@
               <div class="field">
                   <label>Dirección Matriz</label>
                   <input bind:value={config.Direccion} placeholder="Av. Principal 123" />
+              </div>
+              <div class="field">
+                  <label>Agente de Retención</label>
+                  <input bind:value={config.AgenteRetencion} placeholder="Ej: Resolución Nro. 1" />
+              </div>
+              <div class="field">
+                  <label>Logo de Empresa (Opcional)</label>
+                  <div class="input-group">
+                      <input bind:value={config.LogoPath} readonly placeholder="Seleccione su logo..." />
+                      <button class="btn-secondary" on:click={handleSelectLogo}>📷</button>
+                  </div>
               </div>
           {:else if step === 2}
               <div class="field">

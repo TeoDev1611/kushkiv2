@@ -9,7 +9,7 @@ import (
 // EmisorConfig almacena la configuración tributaria del emisor.
 type EmisorConfig struct {
 	gorm.Model
-	RUC             string `gorm:"primaryKey;uniqueIndex"`
+	RUC             string `gorm:"uniqueIndex"`
 	RazonSocial     string
 	NombreComercial string
 	Direccion       string
@@ -26,7 +26,9 @@ type EmisorConfig struct {
 	Estab           string // Ej: '001'
 	PtoEmi          string // Ej: '001'
 	Obligado        bool   // Obligado a llevar contabilidad
-	
+	ContribuyenteRimpe string // "CONTRIBUYENTE NEGOCIO POPULAR - RÉGIMEN RIMPE" o "CONTRIBUYENTE RÉGIMEN RIMPE"
+	AgenteRetencion    string // "1" o resolución
+
 	// Configuración SMTP (Correo Local)
 	SMTPHost        string
 	SMTPPort        int
@@ -35,6 +37,7 @@ type EmisorConfig struct {
 
 	// Archivos
 	StoragePath     string // Ruta base para guardar archivos
+	LogoPath        string // Ruta del logo para el RIDE
 }
 
 // Client representa a los clientes/compradores.
@@ -92,6 +95,25 @@ type Product struct {
 	UpdatedAt     time.Time
 }
 
+// MailLog registra el historial de envíos de correo.
+type MailLog struct {
+	ID           uint      `gorm:"primaryKey"`
+	FacturaClave string    `gorm:"index"`
+	Email        string
+	Estado       string    // SUCCESS, FAILED
+	Mensaje      string    // Error detallado si falló
+	Fecha        time.Time
+}
+
+type MailLogDTO struct {
+	ID           uint   `json:"id"`
+	FacturaClave string `json:"facturaClave"`
+	Email        string `json:"email"`
+	Estado       string `json:"estado"`
+	Mensaje      string `json:"mensaje"`
+	Fecha        string `json:"fecha"`
+}
+
 // EmailQueue se mantiene temporalmente por si quedan registros antiguos, 
 // pero ya no será procesada por el sistema legacy.
 type EmailQueue struct {
@@ -121,7 +143,10 @@ type EmisorConfigDTO struct {
 	Estab           string `json:"Estab"`
 	PtoEmi          string `json:"PtoEmi"`
 	Obligado        bool   `json:"Obligado"`
+	ContribuyenteRimpe string `json:"ContribuyenteRimpe"`
+	AgenteRetencion    string `json:"AgenteRetencion"`
 	StoragePath     string `json:"StoragePath"`
+	LogoPath        string `json:"LogoPath"`
 	
 	// SMTP
 	SMTPHost        string `json:"SMTPHost"`
@@ -144,7 +169,7 @@ type ProductDTO struct {
 	Name          string  `json:"Name"`
 	Price         float64 `json:"Price"`
 	Stock         int     `json:"Stock"`
-	TaxCode       int     `json:"TaxCode"`
+	TaxCode       string  `json:"TaxCode"`
 	TaxPercentage int     `json:"TaxPercentage"`
 }
 
@@ -155,7 +180,10 @@ type FacturaDTO struct {
 	ClienteDireccion string        `json:"clienteDireccion"`
 	ClienteEmail     string        `json:"clienteEmail"`
 	ClienteTelefono  string        `json:"clienteTelefono"`
+	Observacion      string        `json:"observacion"`
 	FormaPago        string        `json:"formaPago"`
+	Plazo            string        `json:"plazo"`
+	UnidadTiempo     string        `json:"unidadTiempo"`
 	Items            []InvoiceItem `json:"items"`
 	ClaveAcceso      string
 }

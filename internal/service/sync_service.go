@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"kushkiv2/internal/db"
+	"kushkiv2/pkg/logger"
 	"kushkiv2/pkg/sri"
 	"sync"
 	"time"
@@ -95,6 +96,7 @@ func (s *SyncService) SyncPendingInvoices() {
 		return
 	}
 
+	logger.Info("Procesando Batch: %d facturas pendientes...", len(pending))
 	s.AddLog("Proceso Batch", "Info", fmt.Sprintf("Procesando %d facturas pendientes...", len(pending)), "", "")
 
 	// WORKER POOL: Límite de concurrencia (ej. 3 hilos simultáneos)

@@ -35,13 +35,13 @@
         <span class="icon">📊</span> 
         {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Resumen</span>{/if}
       </button>
-      <button class:active={activeTab === 'history'} on:click={() => setTab('history')} title="Historial">
-        <span class="icon">🕒</span> 
-        {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Historial</span>{/if}
-      </button>
       <button class:active={activeTab === 'invoice'} on:click={() => setTab('invoice')} title="Nueva Factura">
         <span class="icon">📄</span> 
         {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Nueva Factura</span>{/if}
+      </button>
+      <button class:active={activeTab === 'history'} on:click={() => setTab('history')} title="Historial">
+        <span class="icon">🕒</span> 
+        {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Historial</span>{/if}
       </button>
       <button class:active={activeTab === 'products'} on:click={() => setTab('products')} title="Productos">
         <span class="icon">📦</span> 
@@ -51,13 +51,17 @@
         <span class="icon">👥</span> 
         {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Clientes</span>{/if}
       </button>
+      <button class:active={activeTab === 'sync'} on:click={() => setTab('sync')} title="Actividad">
+        <span class="icon">📈</span> 
+        {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Actividad</span>{/if}
+      </button>
+      <button class:active={activeTab === 'backups'} on:click={() => setTab('backups')} title="Respaldos">
+        <span class="icon">💾</span> 
+        {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Respaldos</span>{/if}
+      </button>
       <button class:active={activeTab === 'config'} on:click={() => setTab('config')} title="Configuración">
         <span class="icon">⚙️</span> 
         {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Configuración</span>{/if}
-      </button>
-      <button class:active={activeTab === 'sync'} on:click={() => setTab('sync')} title="Sincronización">
-        <span class="icon">🔄</span> 
-        {#if !collapsed}<span class="label" in:fly={{ x: -5, duration: 100 }}>Sincronización</span>{/if}
       </button>
     </nav>
 </aside>

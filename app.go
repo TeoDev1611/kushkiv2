@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"kushkiv2/internal/db"
 	"kushkiv2/internal/service"
 	"kushkiv2/pkg/crypto"
+	"kushkiv2/pkg/logger"
 	"kushkiv2/pkg/util"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	goruntime "runtime"
 	"sync"
 	"time"
@@ -17,7 +21,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// App struct
+// App struct is the main application controller.
+// It handles the lifecycle, dependency injection of services, and exposes methods to the frontend.
 type App struct {
 	ctx            context.Context
 	invoiceService *service.InvoiceService
@@ -27,13 +32,13 @@ type App struct {
 	mailService    *service.MailService
 }
 
-// DashboardStats contiene las métricas para el frontend
+// DashboardStats contiene las métricas clave para el panel de control del frontend.
 type DashboardStats struct {
-	TotalVentas   float64     `json:"totalVentas"`
-	TotalFacturas int64       `json:"totalFacturas"`
-	Pendientes    int64       `json:"pendientes"`
-	SRIOnline     bool        `json:"sriOnline"`
-	SalesTrend    []DailySale `json:"salesTrend"`
+	TotalVentas   float64     `json:"totalVentas"`   // Suma total de ventas autorizadas
+	TotalFacturas int64       `json:"totalFacturas"` // Cantidad total de facturas emitidas
+	Pendientes    int64       `json:"pendientes"`    // Facturas en estado no terminal (pendientes, devueltas)
+	SRIOnline     bool        `json:"sriOnline"`     // Estado de conexión simulado con el SRI
+	SalesTrend    []DailySale `json:"salesTrend"`    // Datos para el gráfico de tendencias
 }
 
 type DailySale struct {
@@ -48,6 +53,13 @@ type FacturasResponse struct {
 
 // NewApp creates a new App application struct
 func NewApp() *App {
+	for _, arg := range os.Args {
+		if arg == "--kushki-debug" {
+			logger.DebugMode = true
+			break
+		}
+	}
+
 	return &App{
 		invoiceService: service.NewInvoiceService(),
 		reportService:  service.NewReportService(),
@@ -57,12 +69,46 @@ func NewApp() *App {
 	}
 }
 
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
+// startup is called at application startup
 func (a *App) startup(ctx context.Context) {
+	// Perform your setup here
 	a.ctx = ctx
-	// Iniciar Workers
+	a.startLicenseHeartbeat()
 	a.syncService.StartWorker()
+}
+
+// startLicenseHeartbeat verifica la validez de la licencia cada 4 horas.
+func (a *App) startLicenseHeartbeat() {
+	go func() {
+		for {
+			time.Sleep(4 * time.Hour) // Verificar cada 4 horas
+
+			logger.Debug("Iniciando verificación de licencia (Heartbeat)...")
+
+			var config db.EmisorConfig
+			if err := db.GetDB().First(&config).Error; err != nil || config.LicenseKey == "" {
+				logger.Debug("Heartbeat saltado: No hay licencia configurada.")
+				continue
+			}
+
+			// Re-validar licencia con el backend
+			resp, err := a.cloudService.ActivateLicense(config.LicenseKey)
+			if err != nil {
+				logger.Debug("Heartbeat Warning: No se pudo verificar la licencia: %v", err)
+				// fmt.Printf("Heartbeat Warning: No se pudo verificar la licencia: %v\n", err)
+				// Si el error es crítico (ej: 403), podríamos notificar al frontend para bloquear
+				// a.NotifyFrontend("error", "Error verificando licencia. Reinicie la aplicación.")
+				continue
+			}
+
+			// Actualizar token si es válido
+			if resp.Token != "" {
+				config.LicenseToken = resp.Token
+				db.GetDB().Save(&config)
+				logger.Debug("Heartbeat: Licencia verificada y token renovado correctamente.")
+			}
+		}
+	}()
 }
 
 // NotifyFrontend envía una señal de toast al frontend desde Go.
@@ -85,14 +131,31 @@ func (a *App) CheckLicense() bool {
 	if result.Error != nil {
 		return false
 	}
-	// TODO: En el futuro, validar firma del Token JWT almacenado para mayor seguridad
-	return config.LicenseKey != "" && config.LicenseToken != ""
+	
+	// Validar que exista el token
+	if config.LicenseToken == "" {
+		return false
+	}
+
+	// Validar firma del Token JWT almacenado
+	if err := crypto.VerifyLicenseToken(config.LicenseToken); err != nil {
+		fmt.Printf("Error validando licencia: %v\n", err)
+		return false
+	}
+	
+	return config.LicenseKey != ""
 }
 
 // ActivateLicense intenta activar una licencia con el backend.
 func (a *App) ActivateLicense(key string) string {
 	if key == "" {
 		return "Error: La clave de licencia no puede estar vacía"
+	}
+
+	// Validar formato KSH-XXXX-XXXX-XXXX
+	re := regexp.MustCompile(`^KSH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$`)
+	if !re.MatchString(key) {
+		return "Error: Formato de licencia inválido. Debe ser KSH-XXXX-XXXX-XXXX"
 	}
 
 	// 1. Llamar al Backend
@@ -157,26 +220,32 @@ func (a *App) ExportSalesExcel(startStr, endStr string) string {
 
 // GetTopProducts devuelve los productos más vendidos para gráficos.
 func (a *App) GetTopProducts() []service.TopProduct {
-	products, _ := a.reportService.GetTopProducts(5)
+	products, err := a.reportService.GetTopProducts(5)
+	if err != nil {
+		logger.Error("Error obteniendo top productos: %v", err)
+		return []service.TopProduct{}
+	}
 	return products
 }
 
-// GetDashboardStats calcula los KPIs.
-func (a *App) GetDashboardStats() DashboardStats {
+// GetDashboardStats calcula los KPIs para un rango de fechas específico.
+// Utiliza goroutines para realizar consultas a la base de datos en paralelo y mejorar la respuesta.
+func (a *App) GetDashboardStats(startStr, endStr string) DashboardStats {
 	var stats DashboardStats
-	now := time.Now()
-	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	endOfMonth := startOfMonth.AddDate(0, 1, 0).Add(-time.Nanosecond)
-	sevenDaysAgo := now.AddDate(0, 0, -6)
+	start, _ := time.Parse("2006-01-02", startStr)
+	end, _ := time.Parse("2006-01-02", endStr)
+	// Asegurar que el fin de día sea incluido (23:59:59)
+	end = end.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(4) // Lanzamos 4 tareas en paralelo
 
-	// 1. Total Vendido
+	// 1. Total Vendido (Solo facturas AUTORIZADAS)
 	go func() {
 		defer wg.Done()
 		db.GetDB().Model(&db.Factura{}).
-			Where("estado_sri = ? AND fecha_emision BETWEEN ? AND ?", "AUTORIZADO", startOfMonth, endOfMonth).
+			Where("estado_sri = ?", "AUTORIZADO").
+			Where("fecha_emision BETWEEN ? AND ?", start, end).
 			Select("COALESCE(SUM(total), 0)").
 			Scan(&stats.TotalVentas)
 	}()
@@ -185,7 +254,7 @@ func (a *App) GetDashboardStats() DashboardStats {
 	go func() {
 		defer wg.Done()
 		db.GetDB().Model(&db.Factura{}).
-			Where("fecha_emision BETWEEN ? AND ?", startOfMonth, endOfMonth).
+			Where("fecha_emision BETWEEN ? AND ?", start, end).
 			Count(&stats.TotalFacturas)
 	}()
 
@@ -194,22 +263,24 @@ func (a *App) GetDashboardStats() DashboardStats {
 		defer wg.Done()
 		db.GetDB().Model(&db.Factura{}).
 			Where("estado_sri IN ?", []string{"PENDIENTE", "DEVUELTA", "RECHAZADA", "PENDIENTE_ENVIO"}).
+			Where("fecha_emision BETWEEN ? AND ?", start, end).
 			Count(&stats.Pendientes)
 	}()
 
 	// 4. Ping Simulado
 	stats.SRIOnline = true
 
-	// 5. Tendencia
+	// 5. Tendencia (Adaptada al rango solicitado)
 	trendMap := make(map[string]float64)
 	var trendErr error
 	
-go func() {
+	go func() {
 		defer wg.Done()
 	
-rows, err := db.GetDB().Table("facturas").
+		rows, err := db.GetDB().Table("facturas").
 			Select("date(fecha_emision) as date, SUM(total) as total").
-			Where("estado_sri = ? AND fecha_emision >= ?", "AUTORIZADO", sevenDaysAgo).
+			Where("estado_sri = ?", "AUTORIZADO").
+			Where("fecha_emision BETWEEN ? AND ?", start, end).
 			Group("date").
 			Order("date ASC").
 			Rows()
@@ -223,8 +294,7 @@ rows, err := db.GetDB().Table("facturas").
 		for rows.Next() {
 			var d string
 			var t float64
-		
-rows.Scan(&d, &t)
+			rows.Scan(&d, &t)
 			if len(d) >= 10 {
 				trendMap[d[:10]] = t
 			}
@@ -234,8 +304,13 @@ rows.Scan(&d, &t)
 	wg.Wait()
 
 	if trendErr == nil {
-		for i := 0; i < 7; i++ {
-			day := sevenDaysAgo.AddDate(0, 0, i).Format("2006-01-02")
+		// Generar puntos para cada día en el rango (Max 31 días para no saturar)
+		days := int(end.Sub(start).Hours() / 24)
+		if days > 31 { days = 31 }
+		if days < 1 { days = 7 } // Default a 7 si el rango es inválido
+
+		for i := 0; i <= days; i++ {
+			day := start.AddDate(0, 0, i).Format("2006-01-02")
 			val := 0.0
 			if v, ok := trendMap[day]; ok {
 				val = v
@@ -313,49 +388,50 @@ func (a *App) CreateInvoice(data db.FacturaDTO) string {
 		}
 	}
 
-	// 4. ENVIAR CORREO
+	// 4. ENVIAR CORREO (SOLO SMTP LOCAL)
 	if data.ClienteEmail != "" && len(factura.PDFRIDE) > 0 {
 		config := a.GetEmisorConfig()
 		
 		go func(email, sec string, pdf []byte, conf *db.EmisorConfigDTO) {
-			// Intentar envío local primero si hay configuración
-			if conf != nil && conf.SMTPHost != "" {
-				smtpConfig := service.SMTPConfig{
-					Host:     conf.SMTPHost,
-					Port:     conf.SMTPPort,
-					User:     conf.SMTPUser,
-					Password: conf.SMTPPassword,
-				}
-				err := a.mailService.SendInvoiceEmail(smtpConfig, email, conf.RazonSocial, pdf, sec)
-				if err != nil {
-					fmt.Printf("Error SMTP local: %v. Intentando Cloud...\n", err)
-					// Fallback a Cloud si falla local? O solo notificar error?
-					// Por ahora notificamos error para que el usuario revise su configuración
-					a.NotifyFrontend("error", fmt.Sprintf("Error enviando correo local: %v", err))
-				} else {
-					a.NotifyFrontend("success", fmt.Sprintf("Correo enviado a %s (Local)", email))
-					return
-				}
+			// Validar configuración SMTP
+			if conf == nil || conf.SMTPHost == "" || conf.SMTPPort == 0 || conf.SMTPUser == "" {
+				a.NotifyFrontend("error", fmt.Sprintf("No se envió el correo a %s: Servidor SMTP no configurado.", email))
+				return
 			}
 
-			// Fallback o método principal si no hay SMTP local
-			if conf == nil || conf.SMTPHost == "" {
-				filename := fmt.Sprintf("FACTURA-%s.pdf", sec)
-				err := a.cloudService.SendPDFReport(email, pdf, filename)
-				if err != nil {
-					fmt.Printf("Error enviando email cloud: %v\n", err)
-					a.NotifyFrontend("error", fmt.Sprintf("Error enviando correo: %v", err))
-				} else {
-					a.NotifyFrontend("success", fmt.Sprintf("Correo enviado a %s (Cloud)", email))
-				}
+			smtpConfig := service.SMTPConfig{
+				Host:     conf.SMTPHost,
+				Port:     conf.SMTPPort,
+				User:     conf.SMTPUser,
+				Password: conf.SMTPPassword,
 			}
+			
+			err := a.mailService.SendInvoiceEmail(smtpConfig, email, conf.RazonSocial, pdf, sec)
+			
+			logEntry := db.MailLog{
+				FacturaClave: factura.ClaveAcceso,
+				Email:        email,
+				Fecha:        time.Now(),
+			}
+
+			if err != nil {
+				fmt.Printf("Error SMTP local: %v\n", err)
+				a.NotifyFrontend("error", fmt.Sprintf("Error enviando correo a %s: %v", email, err))
+				logEntry.Estado = "FAILED"
+				logEntry.Mensaje = err.Error()
+			} else {
+				a.NotifyFrontend("success", fmt.Sprintf("Correo enviado a %s exitosamente.", email))
+				logEntry.Estado = "SUCCESS"
+				logEntry.Mensaje = "Enviado correctamente"
+			}
+			db.GetDB().Create(&logEntry)
 		}(data.ClienteEmail, factura.Secuencial, factura.PDFRIDE, config)
 	}
 
 	return fmt.Sprintf("Éxito: Factura %s emitida con clave %s", data.Secuencial, data.ClaveAcceso)
 }
 
-// ResendInvoiceEmail reenvía una factura usando la API Cloud.
+// ResendInvoiceEmail reenvía una factura usando SMTP local.
 func (a *App) ResendInvoiceEmail(claveAcceso string) string {
 	var factura db.Factura
 	if err := db.GetDB().First(&factura, "clave_acceso = ?", claveAcceso).Error; err != nil {
@@ -371,34 +447,59 @@ func (a *App) ResendInvoiceEmail(claveAcceso string) string {
 	config := a.GetEmisorConfig()
 
 	go func(email, sec string, pdf []byte, conf *db.EmisorConfigDTO) {
-		// 1. Intentar Local
-		if conf != nil && conf.SMTPHost != "" {
-			smtpConfig := service.SMTPConfig{
-				Host:     conf.SMTPHost,
-				Port:     conf.SMTPPort,
-				User:     conf.SMTPUser,
-				Password: conf.SMTPPassword,
-			}
-			err := a.mailService.SendInvoiceEmail(smtpConfig, email, conf.RazonSocial, pdf, sec)
-			if err != nil {
-				a.NotifyFrontend("error", fmt.Sprintf("Error SMTP: %v", err))
-			} else {
-				a.NotifyFrontend("success", fmt.Sprintf("Factura reenviada a %s", email))
-			}
+		// Validar configuración SMTP
+		if conf == nil || conf.SMTPHost == "" || conf.SMTPPort == 0 || conf.SMTPUser == "" {
+			a.NotifyFrontend("error", fmt.Sprintf("No se reenvió a %s: Servidor SMTP no configurado.", email))
 			return
 		}
 
-		// 2. Fallback Cloud
-		filename := fmt.Sprintf("FACTURA-%s.pdf", sec)
-		err := a.cloudService.SendPDFReport(email, pdf, filename)
+		smtpConfig := service.SMTPConfig{
+			Host:     conf.SMTPHost,
+			Port:     conf.SMTPPort,
+			User:     conf.SMTPUser,
+			Password: conf.SMTPPassword,
+		}
+		
+		err := a.mailService.SendInvoiceEmail(smtpConfig, email, conf.RazonSocial, pdf, sec)
+		
+		logEntry := db.MailLog{
+			FacturaClave: claveAcceso,
+			Email:        email,
+			Fecha:        time.Now(),
+		}
+
 		if err != nil {
-			a.NotifyFrontend("error", fmt.Sprintf("Fallo al reenviar: %v", err))
+			a.NotifyFrontend("error", fmt.Sprintf("Error SMTP: %v", err))
+			logEntry.Estado = "FAILED"
+			logEntry.Mensaje = err.Error()
 		} else {
 			a.NotifyFrontend("success", fmt.Sprintf("Factura reenviada a %s", email))
+			logEntry.Estado = "SUCCESS"
+			logEntry.Mensaje = "Reenviado correctamente"
 		}
+		db.GetDB().Create(&logEntry)
 	}(cliente.Email, factura.Secuencial, factura.PDFRIDE, config)
 
 	return "Procesando envío..."
+}
+
+// GetMailLogs devuelve el historial de correos.
+func (a *App) GetMailLogs() []db.MailLogDTO {
+	var logs []db.MailLog
+	db.GetDB().Order("fecha desc").Limit(50).Find(&logs)
+	
+	var dtos []db.MailLogDTO
+	for _, l := range logs {
+		dtos = append(dtos, db.MailLogDTO{
+			ID:           l.ID,
+			FacturaClave: l.FacturaClave,
+			Email:        l.Email,
+			Estado:       l.Estado,
+			Mensaje:      l.Mensaje,
+			Fecha:        l.Fecha.Format("02/01/2006 15:04:05"),
+		})
+	}
+	return dtos
 }
 
 // SelectBackupPath abre diálogo para seleccionar carpeta.
@@ -440,6 +541,51 @@ func (a *App) CreateBackup() error {
 	}
 
 	return util.CreateBackupZip(destPath, sources)
+}
+
+type BackupDTO struct {
+	Name string `json:"name"`
+	Size string `json:"size"`
+	Date string `json:"date"`
+	Path string `json:"path"`
+}
+
+// GetBackups lista los archivos .zip en la carpeta de respaldos.
+func (a *App) GetBackups() []BackupDTO {
+	config := a.GetEmisorConfig()
+	if config == nil {
+		return []BackupDTO{}
+	}
+
+	backupDir := config.StoragePath
+	if backupDir == "" {
+		backupDir, _ = os.UserHomeDir()
+	} else {
+		backupDir = filepath.Join(backupDir, "Backups")
+	}
+
+	files, err := os.ReadDir(backupDir)
+	if err != nil {
+		return []BackupDTO{}
+	}
+
+	var backups []BackupDTO
+	for _, f := range files {
+		if !f.IsDir() && filepath.Ext(f.Name()) == ".zip" {
+			info, _ := f.Info()
+			sizeMB := float64(info.Size()) / 1024 / 1024
+			
+			backups = append(backups, BackupDTO{
+				Name: f.Name(),
+				Size: fmt.Sprintf("%.2f MB", sizeMB),
+				Date: info.ModTime().Format("02/01/2006 15:04"),
+				Path: filepath.Join(backupDir, f.Name()),
+			})
+		}
+	}
+	// Ordenar por fecha (más reciente primero) es ideal, pero lo haremos en frontend o aquí invertimos el loop si fuera slice simple.
+	// Por simplicidad, retornamos tal cual y el frontend puede ordenar o mostramos los últimos.
+	return backups
 }
 
 // GetNextSecuencial devuelve el siguiente número disponible.
@@ -645,7 +791,10 @@ func (a *App) GetEmisorConfig() *db.EmisorConfigDTO {
 		Estab:        config.Estab,
 		PtoEmi:       config.PtoEmi,
 		Obligado:     config.Obligado,
+		ContribuyenteRimpe: config.ContribuyenteRimpe,
+		AgenteRetencion:    config.AgenteRetencion,
 		StoragePath:  config.StoragePath,
+		LogoPath:     config.LogoPath,
 		SMTPHost:     config.SMTPHost,
 		SMTPPort:     config.SMTPPort,
 		SMTPUser:     config.SMTPUser,
@@ -659,6 +808,16 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 		if _, err := os.Stat(dto.StoragePath); os.IsNotExist(err) {
 			return "Error: La ruta de almacenamiento no existe"
 		}
+	}
+
+	// Validación RUC (SRI requiere 13 dígitos)
+	if len(dto.RUC) != 13 {
+		return "Error: El RUC debe tener exactamente 13 dígitos"
+	}
+
+	// Validación SMTP
+	if strings.Contains(dto.SMTPHost, "smpt") {
+		return "Error: Posible error de escritura en servidor SMTP. ¿Quiso decir 'smtp'?"
 	}
 
 	if err := crypto.ValidateCert(dto.P12Path, dto.P12Password); err != nil {
@@ -689,7 +848,10 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 	existing.Estab = dto.Estab
 	existing.PtoEmi = dto.PtoEmi
 	existing.Obligado = dto.Obligado
+	existing.ContribuyenteRimpe = dto.ContribuyenteRimpe
+	existing.AgenteRetencion = dto.AgenteRetencion
 	existing.StoragePath = dto.StoragePath
+	existing.LogoPath = dto.LogoPath
 	
 	existing.SMTPHost = dto.SMTPHost
 	existing.SMTPPort = dto.SMTPPort
@@ -722,6 +884,57 @@ func (a *App) SelectCertificate() string {
 	return selection
 }
 
+// SelectAndSaveLogo abre diálogo para imagen y la procesa.
+func (a *App) SelectAndSaveLogo() string {
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Seleccionar Logo de Empresa",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Imágenes", Pattern: "*.png;*.jpg;*.jpeg"},
+		},
+	})
+	if err != nil || selection == "" {
+		return ""
+	}
+
+	// Definir dónde guardar (Carpeta de usuario/.kushki/assets o local)
+	// Usaremos la StoragePath definida o un default
+	config := a.GetEmisorConfig()
+	targetDir := "assets"
+	if config != nil && config.StoragePath != "" {
+		targetDir = filepath.Join(config.StoragePath, "assets")
+	} else {
+		// Fallback local
+		cwd, _ := os.Getwd()
+		targetDir = filepath.Join(cwd, "assets")
+	}
+
+	finalPath, err := util.ProcessAndSaveLogo(selection, targetDir)
+	if err != nil {
+		logger.Error("Error procesando logo: %v", err)
+		return "Error procesando imagen"
+	}
+
+	return finalPath
+}
+
+// TestSMTPConnection verifica si las credenciales de correo funcionan.
+func (a *App) TestSMTPConnection(dto db.EmisorConfigDTO) string {
+	smtpConfig := service.SMTPConfig{
+		Host:     dto.SMTPHost,
+		Port:     dto.SMTPPort,
+		User:     dto.SMTPUser,
+		Password: dto.SMTPPassword,
+	}
+
+	// Intentar enviar un correo de prueba al mismo usuario
+	err := a.mailService.SendTestEmail(smtpConfig, dto.SMTPUser)
+	if err != nil {
+		return fmt.Sprintf("Error de conexión: %v", err)
+	}
+
+	return "Éxito: Correo de prueba enviado a " + dto.SMTPUser
+}
+
 // --- GESTIÓN DE CLIENTES ---
 
 func (a *App) GetClients() []db.ClientDTO {
@@ -737,7 +950,8 @@ func (a *App) GetClients() []db.ClientDTO {
 func (a *App) SearchClients(query string) []db.ClientDTO {
 	var clients []db.Client
 	likeQuery := "%" + query + "%"
-	db.GetDB().Where("nombre LIKE ? OR id LIKE ?", likeQuery, likeQuery).Find(&clients)
+	// OPTIMIZACIÓN: Limitamos a 50 resultados para evitar congelar la UI con grandes volúmenes de datos.
+	db.GetDB().Where("nombre LIKE ? OR id LIKE ?", likeQuery, likeQuery).Limit(50).Find(&clients)
 	var dtos []db.ClientDTO
 	for _, c := range clients {
 		dtos = append(dtos, db.ClientDTO{ID: c.ID, TipoID: c.TipoID, Nombre: c.Nombre, Direccion: c.Direccion, Email: c.Email, Telefono: c.Telefono})
@@ -780,7 +994,7 @@ func (a *App) GetProducts() []db.ProductDTO {
 	db.GetDB().Find(&products)
 	var dtos []db.ProductDTO
 	for _, p := range products {
-		dtos = append(dtos, db.ProductDTO{SKU: p.SKU, Name: p.Name, Price: p.Price, Stock: p.Stock, TaxCode: p.TaxCode, TaxPercentage: p.TaxPercentage})
+		dtos = append(dtos, db.ProductDTO{SKU: p.SKU, Name: p.Name, Price: p.Price, Stock: p.Stock, TaxCode: strconv.Itoa(p.TaxCode), TaxPercentage: p.TaxPercentage})
 	}
 	return dtos
 }
@@ -788,28 +1002,34 @@ func (a *App) GetProducts() []db.ProductDTO {
 func (a *App) SearchProducts(query string) []db.ProductDTO {
 	var products []db.Product
 	likeQuery := "%" + query + "%"
-	db.GetDB().Where("name LIKE ? OR sku LIKE ?", likeQuery, likeQuery).Find(&products)
+	// OPTIMIZACIÓN: Limitamos a 50 resultados para mantener la búsqueda ágil.
+	db.GetDB().Where("name LIKE ? OR sku LIKE ?", likeQuery, likeQuery).Limit(50).Find(&products)
 	var dtos []db.ProductDTO
 	for _, p := range products {
-		dtos = append(dtos, db.ProductDTO{SKU: p.SKU, Name: p.Name, Price: p.Price, Stock: p.Stock, TaxCode: p.TaxCode, TaxPercentage: p.TaxPercentage})
+		dtos = append(dtos, db.ProductDTO{SKU: p.SKU, Name: p.Name, Price: p.Price, Stock: p.Stock, TaxCode: strconv.Itoa(p.TaxCode), TaxPercentage: p.TaxPercentage})
 	}
 	return dtos
 }
 
 func (a *App) SaveProduct(dto db.ProductDTO) string {
+	taxCodeInt, err := strconv.Atoi(dto.TaxCode)
+	if err != nil {
+		return fmt.Sprintf("Error: Código de impuesto inválido: %v", err)
+	}
+
 	var existing db.Product
 	result := db.GetDB().First(&existing, "sku = ?", dto.SKU)
 	if result.Error == nil {
 		existing.Name = dto.Name
 		existing.Price = dto.Price
 		existing.Stock = dto.Stock
-		existing.TaxCode = dto.TaxCode
+		existing.TaxCode = taxCodeInt
 		existing.TaxPercentage = dto.TaxPercentage
 		if err := db.GetDB().Save(&existing).Error; err != nil {
 			return fmt.Sprintf("Error actualizando producto: %v", err)
 		}
 	} else {
-		newProd := db.Product{SKU: dto.SKU, Name: dto.Name, Price: dto.Price, Stock: dto.Stock, TaxCode: dto.TaxCode, TaxPercentage: dto.TaxPercentage}
+		newProd := db.Product{SKU: dto.SKU, Name: dto.Name, Price: dto.Price, Stock: dto.Stock, TaxCode: taxCodeInt, TaxPercentage: dto.TaxPercentage}
 		if err := db.GetDB().Create(&newProd).Error; err != nil {
 			return fmt.Sprintf("Error creando producto: %v", err)
 		}

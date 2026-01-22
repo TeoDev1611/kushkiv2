@@ -13,6 +13,13 @@ var (
 	once sync.Once
 )
 
+// SetDB permite inyectar una instancia de base de datos (útil para tests).
+func SetDB(database *gorm.DB) {
+	db = database
+	// Marcar once como hecho para evitar sobrescritura si se llama a GetDB después
+	once.Do(func() {})
+}
+
 // GetDB devuelve la instancia única de la base de datos (Singleton).
 func GetDB() *gorm.DB {
 	once.Do(func() {

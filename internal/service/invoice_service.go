@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"kushkiv2/internal/db"
 	"kushkiv2/pkg/crypto"
+	"kushkiv2/pkg/logger"
 	"kushkiv2/pkg/pdf"
 	"kushkiv2/pkg/sri"
 	"kushkiv2/pkg/util"
@@ -43,10 +44,18 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 	if err := db.GetDB().First(&config).Error; err != nil {
 		return fmt.Errorf("emisor no configurado: %v", err)
 	}
+	
+	// Validar RUC del Emisor (CRÍTICO: debe tener 13 dígitos)
+	if len(config.RUC) != 13 {
+		return fmt.Errorf("configuración inválida: El RUC del emisor tiene %d dígitos, debe tener 13", len(config.RUC))
+	}
 
 	// VALIDACIONES NORMATIVA SRI 2025/2026
 
 	// Regla 6: Validación de productos
+	if len(dto.Items) == 0 {
+		return fmt.Errorf("error validación: la factura debe tener al menos un ítem")
+	}
 	for _, item := range dto.Items {
 		if len(item.Codigo) == 0 {
 			return fmt.Errorf("normativa 2025: todos los ítems deben tener código principal (SKU)")
@@ -57,12 +66,12 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 	// Calculamos el total preliminar para validar
 	var totalValidacion float64
 	for _, item := range dto.Items {
-		base := item.Cantidad * item.Precio
-		impuesto := base * (item.PorcentajeIVA / 100)
+		base := util.Round(item.Cantidad*item.Precio, 2)
+		impuesto := util.Round(base*(item.PorcentajeIVA/100), 2)
 		totalValidacion += base + impuesto
 	}
 
-	if totalValidacion >= 1000.00 && dto.FormaPago == "01" {
+	if config.Ambiente == 2 && totalValidacion >= 1000.00 && dto.FormaPago == "01" {
 		return fmt.Errorf("normativa SRI: facturas superiores a $1,000 requieren uso del sistema financiero (no '01')")
 	}
 
@@ -92,21 +101,21 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 	})
 
 	for _, item := range dto.Items {
-		precioTotalSinImpuesto := item.Cantidad * item.Precio
+		precioTotalSinImpuesto := util.Round(item.Cantidad*item.Precio, 2)
 
 		// Crear detalle XML
 		detalle := xml.Detalle{
 			CodigoPrincipal:        item.Codigo,
 			Descripcion:            item.Nombre,
-			Cantidad:               item.Cantidad,
-			PrecioUnitario:         item.Precio,
+			Cantidad:               item.Cantidad, // Cantidad permitimos hasta 6, no redondeamos agresivamente aquí
+			PrecioUnitario:         item.Precio,   // Unitario hasta 6
 			Descuento:              0.00,
 			PrecioTotalSinImpuesto: precioTotalSinImpuesto,
 			Impuestos:              []xml.Impuesto{},
 		}
 
 		// Cálculo Impuesto Dinámico
-		valorIVA := precioTotalSinImpuesto * (item.PorcentajeIVA / 100)
+		valorIVA := util.Round(precioTotalSinImpuesto*(item.PorcentajeIVA/100), 2)
 
 		detalle.Impuestos = append(detalle.Impuestos, xml.Impuesto{
 			Codigo:           "2", // Siempre 2 para IVA en Ecuador
@@ -118,8 +127,8 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 
 		// Acumular para totales
 		actual := basesImponibles[item.CodigoIVA]
-		actual.Base += precioTotalSinImpuesto
-		actual.Valor += valorIVA
+		actual.Base = util.Round(actual.Base+precioTotalSinImpuesto, 2)
+		actual.Valor = util.Round(actual.Valor+valorIVA, 2)
 		actual.Tarifa = item.PorcentajeIVA
 		basesImponibles[item.CodigoIVA] = actual
 
@@ -139,6 +148,10 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 		importeTotal += datos.Base + datos.Valor
 		totalSinImpuestos += datos.Base
 	}
+	
+	// Redondeo final de totales globales
+	importeTotal = util.Round(importeTotal, 2)
+	totalSinImpuestos = util.Round(totalSinImpuestos, 2)
 
 	// 3. Formateo Estricto SRI (Padding)
 	// ... (Código intermedio omitido para brevedad en el replacement, pero se mantiene intacto)
@@ -152,6 +165,7 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 	secuencialStr := fmt.Sprintf("%09d", nSec)
 
 	// 4. Generar Clave de Acceso (49 dígitos)
+	// Algoritmo estándar del SRI: Fecha + Tipo + RUC + Ambiente + Serie + Secuencial + Código + TipoEmisión + DigitoVerificador
 	fechaEmision := time.Now()
 	fechaStr := fechaEmision.Format("02012006")
 	tipoDoc := "01" // Factura
@@ -159,7 +173,7 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 	ambiente := fmt.Sprintf("%d", config.Ambiente)
 	serie := estabStr + ptoEmiStr
 	emision := "1"          // Normal
-	codigoNum := "12345678" // Código de seguridad
+	codigoNum := "12345678" // Código de seguridad fijo (puede ser aleatorio)
 
 	clavePrevia := fechaStr + tipoDoc + ruc + ambiente + serie + secuencialStr + codigoNum + emision
 	digito := util.CalcularDigitoModulo11(clavePrevia)
@@ -202,7 +216,8 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 				Secuencial:      secuencialStr,
 
 				DirMatriz:       dirMatriz,
-
+				ContribuyenteRimpe: config.ContribuyenteRimpe,
+				AgenteRetencion:    config.AgenteRetencion,
 			},
 
 			InfoFactura: xml.InfoFactura{
@@ -232,15 +247,12 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 				Moneda:                      "DOLAR",
 
 				Pagos: []xml.Pago{
-
 					{
-
-						FormaPago: dto.FormaPago,
-
-						Total:     importeTotal,
-
+						FormaPago:    dto.FormaPago,
+						Total:        importeTotal,
+						Plazo:        dto.Plazo,
+						UnidadTiempo: dto.UnidadTiempo,
 					},
-
 				},
 
 			},
@@ -259,6 +271,9 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 	}
 	if dto.ClienteTelefono != "" {
 		facturaXML.InfoAdicional = append(facturaXML.InfoAdicional, xml.CampoAdicional{Nombre: "Telefono", Value: dto.ClienteTelefono})
+	}
+	if dto.Observacion != "" {
+		facturaXML.InfoAdicional = append(facturaXML.InfoAdicional, xml.CampoAdicional{Nombre: "Observacion", Value: dto.Observacion})
 	}
 	// Si la dirección es larga o se requiere explícitamente en adicionales también:
 	if dto.ClienteDireccion != "" {
@@ -390,9 +405,9 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 
 	// 9. Generar RIDE (PDF) si no hubo error fatal técnico (Offline sí genera PDF)
 	if facturaDB.EstadoSRI != "ERROR_TECNICO" {
-		pdfBytes, errPdf := pdf.GenerarRIDE(*facturaXML, "") // Por ahora sin logo path explícito
+		pdfBytes, errPdf := pdf.GenerarRIDE(*facturaXML, config.LogoPath)
 		if errPdf != nil {
-			fmt.Printf("Error generando RIDE: %v\n", errPdf)
+			logger.Error("Error generando RIDE: %v", errPdf)
 		} else {
 			facturaDB.PDFRIDE = pdfBytes
 		}

@@ -4,6 +4,10 @@ import {db} from '../models';
 import {main} from '../models';
 import {service} from '../models';
 
+export function ActivateLicense(arg1:string):Promise<string>;
+
+export function CheckLicense():Promise<boolean>;
+
 export function CreateBackup():Promise<void>;
 
 export function CreateInvoice(arg1:db.FacturaDTO):Promise<string>;
@@ -14,13 +18,17 @@ export function DeleteProduct(arg1:string):Promise<string>;
 
 export function ExportSalesExcel(arg1:string,arg2:string):Promise<string>;
 
+export function GetBackups():Promise<Array<main.BackupDTO>>;
+
 export function GetClients():Promise<Array<db.ClientDTO>>;
 
-export function GetDashboardStats():Promise<main.DashboardStats>;
+export function GetDashboardStats(arg1:string,arg2:string):Promise<main.DashboardStats>;
 
 export function GetEmisorConfig():Promise<db.EmisorConfigDTO>;
 
 export function GetFacturasPaginated(arg1:number,arg2:number):Promise<main.FacturasResponse>;
+
+export function GetMailLogs():Promise<Array<db.MailLogDTO>>;
 
 export function GetNextSecuencial():Promise<string>;
 
@@ -44,18 +52,20 @@ export function SaveClient(arg1:db.ClientDTO):Promise<string>;
 
 export function SaveEmisorConfig(arg1:db.EmisorConfigDTO):Promise<string>;
 
-export function SaveFacturaPDF(arg1:string):Promise<string>;
-
 export function SaveProduct(arg1:db.ProductDTO):Promise<string>;
 
 export function SearchClients(arg1:string):Promise<Array<db.ClientDTO>>;
 
 export function SearchProducts(arg1:string):Promise<Array<db.ProductDTO>>;
 
+export function SelectAndSaveLogo():Promise<string>;
+
 export function SelectBackupPath():Promise<string>;
 
 export function SelectCertificate():Promise<string>;
 
 export function SelectStoragePath():Promise<string>;
+
+export function TestSMTPConnection(arg1:db.EmisorConfigDTO):Promise<string>;
 
 export function TriggerSyncManual():Promise<string>;

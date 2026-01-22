@@ -24,14 +24,19 @@ graph TD
 
 ### 2. Módulo de Seguridad (Licenciamiento)
 
-El sistema implementa un modelo de seguridad "Node-Locked" para prevenir la piratería.
+El sistema implementa un modelo de seguridad "Node-Locked" robusto para prevenir la piratería y la manipulación.
 
 *   **Machine ID:** Se genera un hash SHA-256 único basado en: `Hostname + OS + Arch`.
-*   **Activación:**
-    *   Endpoint: `POST /api/v1/license/activate`
+*   **Activación Segura:**
+    *   Endpoint: `POST /api/v1/license/activate` (URL Ofuscada en binario).
     *   Payload: `{ license_key: "...", machine_id: "..." }`
-    *   Respuesta: Token JWT que se almacena localmente (`EmisorConfig.LicenseToken`).
-*   **Persistencia:** La clave y el token se guardan en la tabla `emisor_configs`.
+    *   **Verificación:** La respuesta incluye un Token JWT firmado (RS256). El cliente verifica criptográficamente la firma del token usando una **Llave Pública embebida y ofuscada** antes de aceptarlo.
+*   **Arranque (Startup):**
+    *   En cada inicio, el sistema valida la integridad y firma del Token JWT almacenado en `EmisorConfig.LicenseToken`. Si la firma no es válida (token falsificado), el sistema deniega el acceso.
+*   **Protección de Código:**
+    *   La URL de la API y la Llave Pública no existen como texto plano en el binario. Se almacenan codificadas y ofuscadas para dificultar la ingeniería inversa básica (strings/grep).
+    *   El archivo `public.pem` ha sido eliminado del despliegue final ya que la llave reside en memoria.
+*   **Persistencia:** La clave y el token validado se guardan en la tabla `emisor_configs`.
 *   **Bloqueo UI:** El Frontend verifica el estado de la licencia antes de montar el Dashboard.
 
 ### 3. Servicio de Nube (`CloudService`)

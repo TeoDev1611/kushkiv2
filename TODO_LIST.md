@@ -1,30 +1,32 @@
 # Lista de Tareas (TODO)
 
-## ✅ Completado
-- [x] **Fase 1:** Estructura base Wails + Svelte.
-- [x] **Fase 2:** Base de datos SQLite y Modelos GORM.
-- [x] **Fase 3:** Generación y Firma de XML (XAdES-BES nativo).
-- [x] **Fase 4:** Conexión SOAP con SRI (Recepción/Autorización).
-- [x] **Fase 5:** Generación de RIDE (PDF) con Maroto.
-- [x] **Fase 6:** Dashboard y Reportería Básica.
-- [x] **Fase 7:** Seguridad y Cloud.
-    - [x] Implementar `CloudService` para API Deno.
-    - [x] Sistema de Licenciamiento Node-Locked.
-    - [x] UI de Bloqueo por Licencia.
-    - [x] Wizard de Configuración Inicial Obligatorio.
-    - [x] Eliminación de SMTP Legacy.
+## ✅ Completado (Sprint Final - Q1 2026)
 
-## 🚀 Pendiente (Roadmap)
+### Core & SRI
+- [x] **Validación XML:** Estructura `InfoAdicional`, `Detalles`, `Tarifa` corregida.
+- [x] **Normativa:** Soporte RIMPE, Agente de Retención y Reglas de Pago (>$1000).
+- [x] **Precisión:** Implementación de redondeo estricto a 2 decimales.
 
-### Refinamiento Técnico
-- [ ] **Validación JWT:** Verificar firma del token de licencia en el cliente Go para evitar spoofing simple.
-- [ ] **Offline Mode Mejorado:** Cola de reintento para envío de correos cuando vuelva internet (actualmente solo se intenta una vez al emitir).
+### Funcionalidad de Correo
+- [x] **SMTP Local:** Implementación completa de envío nativo.
+- [x] **Plantillas:** HTML profesional con resumen de factura.
+- [x] **Pruebas:** Botón "Test Connection" y validación de credenciales.
+- [x] **Independencia:** Eliminación de fallback a API Cloud para envíos.
 
-### Funcionalidades Usuario
-- [ ] **Importador Masivo:** Carga de productos/clientes desde Excel.
-- [ ] **Personalización:** Permitir subir logo de empresa para el RIDE.
-- [ ] **Multi-usuario:** (Futuro) Roles básicos (Admin/Vendedor).
+### Interfaz y Experiencia (UI/UX)
+- [x] **Personalización:** Subida y redimensionado de Logo.
+- [x] **Dashboard:** Filtros de fecha dinámicos y gráficos reactivos.
+- [x] **Notificaciones:** Toasts apilables y Centro de Historial (Campana).
+- [x] **Navegación:** Reordenamiento lógico del Sidebar.
+- [x] **Validación:** Feedback visual (bordes rojos) en formularios incompletos.
 
-### Mantenimiento
-- [ ] **Tests Unitarios:** Aumentar cobertura en `CloudService` y `InvoiceService`.
-- [ ] **CI/CD:** Configurar GitHub Actions para builds automáticos.
+### Gestión de Datos
+- [x] **Backups:** Módulo para listar y crear respaldos ZIP.
+- [x] **Auditoría:** Tabla `MailLog` y visualización en pestaña "Actividad".
+- [x] **Búsqueda:** Dropdown de clientes optimizado con scroll.
+
+## 🚀 Mantenimiento Futuro (Post-Entrega)
+
+- [ ] **Importador Masivo:** Permitir carga de productos desde CSV.
+- [ ] **Temas:** Opción para cambiar entre modo Oscuro/Claro (actualmente solo Oscuro).
+- [ ] **Multi-empresa:** Soporte para gestionar múltiples RUCs en la misma instalación.
