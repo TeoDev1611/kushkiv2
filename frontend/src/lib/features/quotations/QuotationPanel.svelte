@@ -7,7 +7,7 @@
         ConvertQuotationToInvoice,
         GetProducts,
         GetClients,
-    } from "../../wailsjs/go/main/App.js";
+    } from "wailsjs/go/main/App.js";
     import { onMount, createEventDispatcher } from "svelte";
     import { fade } from "svelte/transition";
 
@@ -46,8 +46,22 @@
         porcentajeIVA: 15,
     };
 
+    // Handler para evento global de guardado (Ctrl+S)
+    const handleGlobalSave = () => {
+        if (mode === 'create') {
+            saveQuotation();
+        }
+    };
+
+    import { onDestroy } from 'svelte';
+
     onMount(async () => {
+        window.addEventListener('app-save', handleGlobalSave);
         loadQuotations();
+    });
+
+    onDestroy(() => {
+        window.removeEventListener('app-save', handleGlobalSave);
     });
 
     async function loadQuotations() {

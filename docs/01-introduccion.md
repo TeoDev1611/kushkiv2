@@ -1,50 +1,41 @@
 ---
-id: introduccion
-title: Introducción
-sidebar_label: Introducción
+title: Introducción a Kushki v2
+description: Descubre la potencia de la facturación local-first moderna.
+sidebar:
+  order: 1
 ---
 
-# Introducción a Kushki Facturador
+# Bienvenido a la Nueva Era de Facturación
 
-**Kushki Facturador** es una solución de escritorio moderna diseñada para simplificar la emisión, autorización y distribución de comprobantes electrónicos en Ecuador. A diferencia de las soluciones web tradicionales, Kushki ofrece una experiencia **Local-First**, garantizando que tus datos estén siempre en tu equipo.
+**Kushki Facturador v2** no es solo una actualización; es una reingeniería total. Hemos abandonado las arquitecturas web lentas para ofrecerte una aplicación de escritorio nativa, construida con **tecnologías de vanguardia (Go + Svelte 4)** que garantizan velocidad instantánea y seguridad total.
 
-## ¿Para quién es esto?
+## ¿Por qué Kushki v2?
 
-*   **PyMEs y Profesionales:** Que necesitan facturar rápidamente sin depender de suscripciones mensuales costosas o sistemas web lentos.
-*   **Contadores:** Que requieren una herramienta fiable que genere los RIDE (PDF) y XMLs cumpliendo estrictamente la normativa del SRI.
-*   **Negocios en Zonas con Internet Inestable:** Gracias a su arquitectura, puedes generar y firmar facturas sin internet, y sincronizarlas cuando recuperes la conexión.
+A diferencia de los sistemas tradicionales que dependen de la velocidad de tu internet para cada clic, Kushki opera bajo la filosofía **Local-First**:
 
-## Capacidades Principales
+1.  **Velocidad Instantánea:** La interfaz carga en milisegundos. No hay "spinners" de carga innecesarios.
+2.  **Privacidad Absoluta:** Tus datos viven en un archivo `SQLite` encriptado en *tu* disco duro. Nosotros no vemos tus clientes ni tus montos.
+3.  **Resiliencia:** ¿Se fue el internet? Sigue facturando. El sistema firmará y guardará los XMLs localmente y los sincronizará cuando vuelvas a estar online.
 
-### 1. Facturación Electrónica SRI
-El núcleo del sistema. Permite generar facturas cumpliendo con la ficha técnica **XML 1.1.0** (versión vigente 2026).
-*   Cálculo automático de impuestos (IVA 15%, 5%, 0%).
-*   Manejo de formas de pago.
-*   Validaciones de montos para Consumidor Final.
+## Capacidades del Sistema
 
-### 2. Gestión de Cotizaciones (Nuevo 🚀)
-Potencia tus ventas antes de facturar.
-*   **Creación de Proformas:** Genera cotizaciones profesionales en segundos.
-*   **Conversión Rápida:** Transforma una cotización aprobada en una Factura oficial con un solo clic, sin volver a escribir datos.
-*   **PDF Automático:** Tus clientes reciben documentos con tu marca listos para aprobar.
+### 🚀 Núcleo de Alto Rendimiento
+*   **Facturación SRI XML 1.1.0:** Cumplimiento estricto de la normativa 2026.
+*   **Cálculo Reactivo:** Cambia cantidades o precios y verás el IVA y Totales recalcularse instantáneamente sin recargar la pantalla.
 
-### 3. Inteligencia de Negocios (Nuevo 📊)
-Toma decisiones basadas en datos reales.
-*   **Gráficos Avanzados:** Visualiza la evolución de tus ingresos mensuales y descubre quiénes son tus mejores clientes.
-*   **Búsqueda Inteligente (Fuzzy):** Encuentra cualquier documento, cliente o producto incluso si cometes errores al escribir (ej. encuentra "Juan" escribiendo "Juna").
+### 💼 Gestión Comercial "Todo en Uno"
+*   **Cotizaciones Integradas:** Crea proformas y conviértelas en facturas con un solo clic.
+*   **Inventario Inteligente:** Búsqueda *Fuzzy* (difusa) que encuentra productos aunque escribas mal su nombre.
 
-### 4. Gestión de Marca
-Tu factura es tu imagen. El sistema permite:
-*   Subir tu **Logo Corporativo**.
-*   Redimensionamiento inteligente de imágenes para que se vean perfectas en el PDF.
-*   Personalización de colores en el RIDE generado.
+### 🎨 Experiencia de Usuario (UX) Obsidian
+*   **Interfaz Oscura:** Diseñada para descansar la vista durante largas jornadas de trabajo.
+*   **Navegación por Teclado:** Usa `Ctrl + 1` para moverte, `Ctrl + N` para facturar. Despídete del mouse.
+*   **Sidebar Inteligente:** Un menú lateral que respeta tu espacio, colapsándose a 72px para darte más área de trabajo.
 
-### 5. Centro de Control (Dashboard)
-Olvídate de las hojas de cálculo. El dashboard te ofrece:
-*   Ventas totales en tiempo real.
-*   Estado de conexión con el SRI.
-*   Gráficos interactivos de rendimiento.
+### 📊 Inteligencia de Negocios
+*   **Dashboard en Tiempo Real:** Gráficos de ventas y KPIs que se actualizan al instante.
+*   **Auditoría Total:** Logs detallados de cada conexión con el SRI y cada correo enviado.
 
-### 6. Independencia Tecnológica
-*   **Tu Correo, Tus Reglas:** Configura tu propio Gmail, Outlook o servidor corporativo para enviar las facturas. No dependes de un tercero para que tus correos lleguen.
-*   **Tus Datos:** Base de datos SQLite encriptada en tu disco duro.
+:::tip[Ventaja Técnica]
+Gracias al uso de **Wails y Svelte 4**, esta aplicación consume hasta un **80% menos de memoria RAM** que las aplicaciones basadas en Electron convencionales.
+:::

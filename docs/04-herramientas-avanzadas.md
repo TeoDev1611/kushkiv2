@@ -1,38 +1,44 @@
 ---
-id: herramientas
 title: Herramientas Avanzadas
+description: Control total sobre tus datos: Auditoría, Sincronización y Backups.
+sidebar:
+  order: 4
 ---
 
-# Herramientas de Auditoría y Seguridad
+# Centro de Control y Seguridad
 
-Para el usuario avanzado o administrador, el sistema ofrece herramientas de control total.
+Ubicado en el módulo de **Sincronización** (`Ctrl + 7`), este panel te da control total sobre lo que ocurre "bajo el capó" del sistema.
 
-## 1. Panel de Actividad (Auditoría)
-Ubicado en la pestaña **"Actividad"** (Icono de gráfico 📈). Este panel se divide en dos secciones críticas:
+## 1. Logs y Auditoría
 
-### A. Historial de Correos ✉️
-Aquí verás un registro detallado de cada intento de envío de correo.
-*   **Estado:** `SUCCESS` (Verde) o `FAILED` (Rojo).
-*   **Detalle:** Si falla, te dirá exactamente por qué (ej. "Contraseña incorrecta", "Host no encontrado").
-*   **Fecha:** Hora exacta del envío.
+La transparencia es clave. Aquí puedes ver:
 
-### B. Logs del Sistema ⚙️
-Registra la "conversación" técnica con el SRI.
-*   Ideal para depuración.
-*   Muestra el JSON exacto de la petición y la respuesta del servidor del SRI.
-*   Útil si una factura es rechazada por motivos tributarios complejos.
+### 📧 Logs de Correo
+¿Un cliente dice que no recibió la factura?
+*   Revisa este log.
+*   Verás el **Estado Exacto** (Enviado, Fallido, Rebotado) y la fecha precisa.
+*   Si falló (ej. "Password incorrect"), el sistema te lo dirá aquí.
 
-## 2. Centro de Respaldos (Backups)
-Ubicado en la pestaña **"Respaldos"** (Icono de disquete 💾).
+### ☁️ Logs de Sincronización SRI
+Historial técnico de la comunicación con el Servicio de Rentas Internas. Útil para contadores que necesitan saber por qué una factura específica fue "DEVUELTA" (ej. errores de validación XML).
 
-Tus datos son lo más importante. Este módulo te permite:
-*   **Ver Historial:** Lista de todos los respaldos generados anteriormente con su peso y fecha.
-*   **Generar Respaldo:** El botón "Crear Respaldo Ahora" comprime:
-    1.  Tu base de datos (`kushki.db`) incluyendo **Facturas y Cotizaciones**.
-    2.  Todas tus carpetas de documentos generados (XMLs y PDFs).
-*   El resultado es un archivo `.zip` listo para guardar en una nube externa o USB.
+## 2. Gestión de Respaldos (Backups)
 
-## 3. Notificaciones del Sistema
-En la cabecera superior derecha (icono 🔔), encontrarás el centro de notificaciones de la sesión.
-*   Guarda un historial temporal de lo que ha sucedido mientras usabas la app (ej. "Factura enviada", "Error de conexión", "Cotización convertida").
-*   Te permite revisar mensajes que desaparecieron de la pantalla (Toasts) si te los perdiste.
+Tu información es tu activo más valioso. Kushki v2 facilita su protección.
+
+*   **Crear Respaldo Ahora:** Con un solo clic, el sistema:
+    1.  Cierra temporalmente la base de datos para asegurar integridad.
+    2.  Comprime la base de datos `kushki.db`.
+    3.  Empaqueta todos los XMLs y PDFs generados.
+    4.  Genera un archivo `.zip` con fecha y hora.
+*   **Restauración:** Simplemente descomprime ese archivo en tu carpeta de instalación en caso de cambiar de computadora.
+
+## 3. Sincronización Manual
+
+Aunque el sistema sincroniza automáticamente cada vez que emites una factura, a veces necesitas forzar una actualización (ej. si trabajaste offline todo el día).
+
+*   Botón **"Sincronizar SRI"**: Fuerza el reenvío de todos los comprobantes que estén en estado `PENDIENTE` o `FIRMADO` pero no `AUTORIZADO`.
+
+:::note[Local-First]
+Recuerda que **tú eres el dueño de tus datos**. No están en nuestra nube. Hacer respaldos periódicos es tu responsabilidad y tu mejor seguro.
+:::

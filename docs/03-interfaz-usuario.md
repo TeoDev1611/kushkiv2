@@ -1,52 +1,57 @@
 ---
-id: interfaz
-title: Manual de Interfaz
+title: Interfaz y Atajos
+description: Domina la interfaz Obsidian y los atajos de teclado para máxima productividad.
+sidebar:
+  order: 3
 ---
 
-# Guía de Uso de la Interfaz
+# Guía de Interfaz y Productividad
 
-Kushki Facturador utiliza una interfaz intuitiva dividida en paneles lógicos.
+Hemos diseñado la interfaz siguiendo los principios de **"Teclado Primero"**. Si eres un contador o facturador intensivo, podrás operar el sistema casi sin tocar el mouse.
 
-## 1. Dashboard (Resumen)
-Tu centro de mando con analítica avanzada.
-*   **Filtros de Fecha:** En la parte superior derecha, selecciona "Desde" y "Hasta" para analizar un periodo específico.
-*   **Tarjetas KPI:**
-    *   *Ventas Totales:* Suma de facturas **Autorizadas** en el periodo.
-    *   *Facturas:* Cantidad de documentos emitidos.
-    *   *Pendientes:* Facturas que requieren tu atención.
-    *   *Estado SRI:* Semáforo de conexión con el servicio de rentas.
-*   **Gráficos Interactivos:**
-    *   **Evolución de Ingresos:** Gráfico de línea suavizada que muestra tus ventas mes a mes.
-    *   **Top 5 Clientes:** Gráfico de pastel para identificar tus cuentas clave.
+## ⌨️ Atajos de Teclado (Power User)
 
-## 2. Cotizaciones (Nuevo Panel)
-Gestiona tus propuestas comerciales.
-*   **Crear:** Selecciona cliente y productos igual que en una factura. Se genera un número secuencial único.
-*   **PDF:** El botón de documento (📄) abre una proforma en PDF lista para enviar o imprimir.
-*   **Convertir a Factura:** Usa el botón de cohete (🚀) para transformar esa cotización en una factura real. El sistema te llevará a la pantalla de emisión con todos los datos pre-cargados.
+¡Aprende estos comandos y duplica tu velocidad!
 
-## 3. Emitir Factura
-El proceso de venta simplificado.
-1.  **Ambiente:** Un switch en la cabecera te permite cambiar entre `PRUEBAS` (Ámbar) y `PRODUCCIÓN` (Verde) al instante.
-2.  **Cliente (Búsqueda Inteligente):** Escribe el nombre, RUC o email. El buscador tolerante a fallos encontrará al cliente aunque cometas errores tipográficos.
-3.  **Productos:** Busca por nombre, código SKU o incluso por precio.
-    *   El cálculo de impuestos (15%, 5%, 0%) es automático.
-4.  **Emitir:** Al hacer clic en "Firmar y Emitir", el sistema:
-    *   Genera el XML y lo firma digitalmente.
-    *   Lo envía al SRI y genera el PDF.
-    *   Envía el correo al cliente.
+| Atajo | Acción | Descripción |
+| :--- | :--- | :--- |
+| **`Ctrl + N`** | **Nueva Factura** | Salta inmediatamente al módulo de facturación, limpia el formulario y pone el foco en el cliente. |
+| **`Ctrl + S`** | **Guardar** | Guarda lo que estés haciendo (Cliente, Producto, Configuración, Cotización). *Nota: En facturación te pedirá confirmación por seguridad.* |
+| **`Esc`** | **Blur** | Quita el foco de cualquier campo de texto para que puedas usar los atajos de navegación. |
+| **`Ctrl + 1`** | Ir a Dashboard | Resumen general. |
+| **`Ctrl + 2`** | Ir a Facturar | Módulo de emisión. |
+| **`Ctrl + 3`** | Ir a Cotizaciones | Gestión de proformas. |
+| **`Ctrl + 4`** | Ir a Productos | Inventario. |
+| **`Ctrl + 5`** | Ir a Clientes | Directorio. |
+| **`Ctrl + 6`** | Ir a Historial | Buscador de documentos. |
+| **`Ctrl + 8`** | Ir a Ajustes | Configuración del sistema. |
 
-## 4. Historial
-Tu archivo digital con **Búsqueda Global**.
-*   **Barra de Búsqueda Inteligente:** Encuentra transacciones escribiendo el nombre del cliente, el número de factura, el RUC o incluso el monto total (ej. "50.00").
-*   **Acciones Rápidas:**
-    *   📄 **PDF:** Abre el RIDE visualmente.
-    *   ✉️ **Email:** Reenvía la factura al cliente con un clic.
-    *   🌐 **XML:** Abre el archivo fuente.
-    *   📂 **Carpeta:** Te lleva a la ubicación física del archivo en tu disco.
+## 🧭 Navegación Lateral (Sidebar)
 
-## 5. Inventario y Clientes
-Gestión básica de tus bases de datos (CRUD).
-*   **Búsqueda Fuzzy:** Encuentra productos o clientes rápidamente usando términos aproximados.
-*   Puedes Crear, Editar y Eliminar productos o clientes.
-*   Los cambios se reflejan inmediatamente en todo el sistema.
+La nueva barra lateral utiliza un diseño **"Rail"**:
+*   **Colapsada (72px):** Muestra iconos SVG de alta definición. Ideal para tener más espacio en tablas y gráficos.
+*   **Expandida:** Al pasar el mouse, se despliega suavemente para mostrar las etiquetas de texto.
+*   **Inteligente:** En pantallas pequeñas (laptops), se mantiene compacta para evitar solapamientos.
+
+## ⚡ Módulo de Facturación (Invoice Emitter)
+
+El panel más importante (`Ctrl + 2`).
+
+1.  **Búsqueda de Cliente:** Empieza escribiendo. El sistema busca por Nombre o RUC en tiempo real.
+    *   *Tip:* Presiona `Enter` para seleccionar y saltar al siguiente campo.
+2.  **Agregar Ítems:**
+    *   Busca productos con el buscador inteligente.
+    *   Los impuestos se calculan solos.
+    *   Presiona el botón `+` o `Enter` en el precio para añadir.
+3.  **Validación Visual:** Si falta un dato (ej. email del cliente), el campo se pondrá rojo y no te dejará emitir.
+
+## 📊 Dashboard Interactivo
+
+Tu centro de mando (`Ctrl + 1`).
+*   **Sin Esperas:** Los datos se cargan en paralelo.
+*   **Gráficos:** Renderizados con `Echarts`, son interactivos. Pasa el mouse para ver valores exactos.
+*   **KPIs:** Indicadores de ventas y estado del SRI (Online/Offline).
+
+:::tip[Accesibilidad]
+Todas las tablas (Clientes, Productos, Historial) soportan navegación por teclado. Usa `Tab` para entrar en la lista y las flechas para moverte.
+:::

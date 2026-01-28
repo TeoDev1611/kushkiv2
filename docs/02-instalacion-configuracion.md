@@ -1,51 +1,52 @@
 ---
-id: instalacion
 title: Instalación y Configuración
+description: Configura tu entorno de facturación en menos de 2 minutos.
+sidebar:
+  order: 2
 ---
 
-# Instalación y Configuración Inicial
+# Puesta en Marcha
 
-Al iniciar **Kushki Facturador** por primera vez, el sistema te guiará a través de un proceso seguro para garantizar que tu entorno de facturación esté listo.
+El sistema está diseñado para ser "Instalar y Olvidar". Una vez configurado, rara vez tendrás que volver a esta sección.
 
-## 1. Activación de Licencia
+## 1. Activación Segura (Node-Locked)
 
-El sistema utiliza protección **Node-Locked**.
-1.  Al abrir la app, verás una pantalla de bloqueo.
-2.  Ingresa tu clave de producto (Formato: `KSH-XXXX-XXXX-XXXX`).
-3.  El sistema validará tu hardware contra el servidor de licencias.
-4.  Si es exitoso, accederás al **Asistente de Configuración (Wizard)**.
+Para proteger tu inversión, el sistema se vincula a tu hardware.
+1.  Al abrir la app, verás la pantalla de bloqueo.
+2.  Ingresa tu licencia: `KSH-XXXX-XXXX-XXXX`.
+3.  El sistema validará y desencriptará la base de datos local.
 
 ## 2. Asistente de Configuración (Wizard)
 
-Este asistente de 4 pasos es obligatorio la primera vez.
+Si es tu primera vez, el sistema detectará que faltan datos y abrirá el **Wizard**.
 
-### Paso 1: Datos de Empresa
-Ingresa los datos tributarios tal como constan en tu RUC.
-*   **RUC:** 13 dígitos obligatorios.
-*   **Dirección Matriz:** La dirección fiscal principal.
-*   **Opcionales:** Si eres Contribuyente RIMPE o Agente de Retención, llena estos campos para que aparezcan en el XML/PDF.
-*   **Logo:** Haz clic en el botón de cámara (📷) y selecciona tu logo (PNG/JPG). El sistema lo ajustará automáticamente.
+### Datos Tributarios
+Llena estos datos con precisión, ya que irán firmados en cada XML.
+*   **RUC & Razón Social:** Tal como constan en tu ficha del SRI.
+*   **Obligado a Contabilidad:** Marca la casilla si aplica.
 
-### Paso 2: Firma Electrónica
-El "pasaporte" de tus facturas.
-*   **Archivo .p12:** Selecciona tu archivo de firma electrónica.
-*   **Contraseña:** La clave de tu firma. El sistema valida inmediatamente si es correcta.
+### Firma Electrónica (.p12)
+El corazón de la facturación.
+*   Selecciona tu archivo `.p12` o `.pfx`.
+*   Ingresa la contraseña. El sistema intentará abrir el archivo en segundo plano para verificar que la clave sea correcta.
 
-### Paso 3: Almacenamiento
-*   Define dónde se guardarán tus facturas.
-*   Por defecto, el sistema crea una estructura organizada por `Año/Mes` dentro de tu carpeta de usuario.
+### Configuración de Correo (SMTP)
+Kushki actúa como tu propio servidor de correos. Esto garantiza que el remitente sea **TU empresa**, no un tercero.
 
-### Paso 4: Correo Electrónico (SMTP)
-Configura cómo se enviarán las facturas a tus clientes.
-*   **Botones Rápidos:** Usa "Gmail" o "Outlook" para pre-llenar los servidores.
-*   **Contraseña:** Si usas Gmail, recuerda usar una **Contraseña de Aplicación**, no tu clave personal.
+| Proveedor | Host | Puerto | Requisito Especial |
+| :--- | :--- | :--- | :--- |
+| **Gmail** | `smtp.gmail.com` | `587` | Requiere "Contraseña de Aplicación" (2FA) |
+| **Outlook** | `smtp.office365.com` | `587` | Usa tu contraseña normal o de aplicación |
 
----
+:::note[¿Por qué configurar mi propio correo?]
+Al usar tu propio SMTP, evitas caer en la carpeta de SPAM de tus clientes, ya que el correo sale legítimamente desde tu cuenta y no desde un servidor masivo de facturación.
+:::
 
-## Modificar Configuración
+## 3. Personalización de Marca
 
-Si necesitas cambiar algo después (ej. actualizaste tu firma):
-1.  Ve a la pestaña **Configuración** en el menú lateral.
-2.  Modifica los datos necesarios.
-3.  Usa el botón **"Probar Conexión"** en la sección de correo para verificar que todo funcione.
-4.  Haz clic en "Guardar Toda la Configuración".
+Ve a la pestaña **Configuración** (`Ctrl + 8`) para:
+*   **Subir Logo:** El sistema redimensiona automáticamente tu imagen para optimizar el peso del PDF (RIDE).
+*   **Ambiente:** Cambia entre `PRUEBAS` y `PRODUCCIÓN` con un solo clic.
+
+### Guardado Contextual
+Recuerda que puedes usar el atajo `Ctrl + S` en el panel de configuración para guardar los cambios inmediatamente.
