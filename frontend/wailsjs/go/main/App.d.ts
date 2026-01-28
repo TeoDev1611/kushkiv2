@@ -8,9 +8,13 @@ export function ActivateLicense(arg1:string):Promise<string>;
 
 export function CheckLicense():Promise<boolean>;
 
+export function ConvertQuotationToInvoice(arg1:number):Promise<db.FacturaDTO>;
+
 export function CreateBackup():Promise<void>;
 
 export function CreateInvoice(arg1:db.FacturaDTO):Promise<string>;
+
+export function CreateQuotation(arg1:db.QuotationDTO):Promise<string>;
 
 export function DeleteClient(arg1:string):Promise<string>;
 
@@ -30,9 +34,15 @@ export function GetFacturasPaginated(arg1:number,arg2:number):Promise<main.Factu
 
 export function GetMailLogs():Promise<Array<db.MailLogDTO>>;
 
+export function GetNextQuotationSecuencial():Promise<string>;
+
 export function GetNextSecuencial():Promise<string>;
 
 export function GetProducts():Promise<Array<db.ProductDTO>>;
+
+export function GetQuotations(arg1:number,arg2:number):Promise<main.QuotationListResponse>;
+
+export function GetStatisticsCharts():Promise<main.ChartsDTO>;
 
 export function GetSyncLogs():Promise<Array<service.SyncLog>>;
 
@@ -46,6 +56,8 @@ export function OpenInvoiceFolder(arg1:string):Promise<string>;
 
 export function OpenInvoiceXML(arg1:string):Promise<string>;
 
+export function OpenQuotationPDF(arg1:number):Promise<string>;
+
 export function ResendInvoiceEmail(arg1:string):Promise<string>;
 
 export function SaveClient(arg1:db.ClientDTO):Promise<string>;
@@ -55,6 +67,8 @@ export function SaveEmisorConfig(arg1:db.EmisorConfigDTO):Promise<string>;
 export function SaveProduct(arg1:db.ProductDTO):Promise<string>;
 
 export function SearchClients(arg1:string):Promise<Array<db.ClientDTO>>;
+
+export function SearchInvoicesSmart(arg1:string):Promise<Array<db.FacturaResumenDTO>>;
 
 export function SearchProducts(arg1:string):Promise<Array<db.ProductDTO>>;
 

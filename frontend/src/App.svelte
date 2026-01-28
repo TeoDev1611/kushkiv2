@@ -1,1684 +1,2244 @@
 <script>
-  import { 
-    CreateInvoice, GetEmisorConfig, SaveEmisorConfig, SelectCertificate, SelectStoragePath, SelectAndSaveLogo,
-    GetProducts, SearchProducts, SaveProduct, DeleteProduct,
-    GetClients, SearchClients, SaveClient, DeleteClient,
-    GetNextSecuencial, GetDashboardStats, GetFacturasPaginated, OpenFacturaPDF,
-    OpenInvoiceFolder, OpenInvoiceXML, ExportSalesExcel, ResendInvoiceEmail,
-    GetTopProducts, GetSyncLogs, GetMailLogs, TriggerSyncManual, CheckLicense, ActivateLicense,
-    TestSMTPConnection, CreateBackup, GetBackups, SelectBackupPath
-  } from '../wailsjs/go/main/App.js'
-  import { EventsOn } from '../wailsjs/runtime/runtime.js'
-  import { onMount } from 'svelte'
-  import { fade, fly, slide } from 'svelte/transition'
-  import { cubicOut } from 'svelte/easing'
-  import { flip } from 'svelte/animate'
-  import Sidebar from './components/Sidebar.svelte'
-  import Wizard from './components/Wizard.svelte'
+    import {
+        CreateInvoice,
+        GetEmisorConfig,
+        SaveEmisorConfig,
+        SelectCertificate,
+        SelectStoragePath,
+        SelectAndSaveLogo,
+        GetProducts,
+        SearchProducts,
+        SaveProduct,
+        DeleteProduct,
+        GetClients,
+        SearchClients,
+        SaveClient,
+        DeleteClient,
+        GetNextSecuencial,
+        GetDashboardStats,
+        GetFacturasPaginated,
+        OpenFacturaPDF,
+        OpenInvoiceFolder,
+        OpenInvoiceXML,
+        ExportSalesExcel,
+        ResendInvoiceEmail,
+        GetTopProducts,
+        GetSyncLogs,
+        GetMailLogs,
+        TriggerSyncManual,
+        CheckLicense,
+        ActivateLicense,
+        TestSMTPConnection,
+        CreateBackup,
+        GetBackups,
+        SelectBackupPath,
+        SearchInvoicesSmart,
+        GetStatisticsCharts,
+    } from "../wailsjs/go/main/App.js";
+    import { EventsOn } from "../wailsjs/runtime/runtime.js";
+    import { onMount } from "svelte";
+    import { fade, fly, slide } from "svelte/transition";
+    import { flip } from "svelte/animate";
+    import { cubicOut } from "svelte/easing";
+    import Sidebar from "./components/Sidebar.svelte";
+    import logo from "./assets/images/logo-universal.png";
+    import Wizard from "./components/Wizard.svelte";
+    import QuotationPanel from "./components/QuotationPanel.svelte";
+    import ChartFrame from "./components/ChartFrame.svelte";
 
-  // --- UTILIDADES ---
-  function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-      const context = this;
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func.apply(context, args), wait);
+    // --- UTILIDADES ---
+    function debounce(func, wait) {
+        let timeout;
+        return function (...args) {
+            const context = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), wait);
+        };
+    }
+
+    // --- ESTADO GLOBAL ---
+    let activeTab = "dashboard";
+    let loading = false;
+    let initialLoading = true; // Estado para la Splash Screen
+    let isLicensed = false; // Estado de Licencia
+    let licenseKeyInput = ""; // Input para la licencia
+    let showWizard = false;
+    let contentArea;
+
+    // --- NOTIFICACIONES & TOASTS ---
+    let toasts = []; // { id, message, type }
+    let notifications = []; // { id, message, type, time }
+    let showNotifications = false; // Toggle para el panel de notificaciones
+    let confirmationModal = {
+        show: false,
+        title: "",
+        message: "",
+        onConfirm: null,
     };
-  }
 
-  // --- ESTADO GLOBAL ---
-  let activeTab = 'dashboard' 
-  let loading = false
-  let initialLoading = true // Estado para la Splash Screen
-  let isLicensed = false // Estado de Licencia
-  let licenseKeyInput = '' // Input para la licencia
-  let showWizard = false
-  let contentArea
-  
-  // --- NOTIFICACIONES & TOASTS ---
-  let toasts = [] // { id, message, type }
-  let notifications = [] // { id, message, type, time }
-  let showNotifications = false // Toggle para el panel de notificaciones
-  let confirmationModal = { show: false, title: '', message: '', onConfirm: null }
+    // --- CONFIGURACIÓN Y FACTURACIÓN ---
+    let config = {
+        RUC: "",
+        RazonSocial: "",
+        NombreComercial: "",
+        Direccion: "",
+        P12Path: "",
+        P12Password: "",
+        Ambiente: 1,
+        Estab: "001",
+        PtoEmi: "001",
+        Obligado: false,
+        StoragePath: "",
+    };
+    let invoice = {
+        secuencial: "000000001",
+        clienteID: "",
+        clienteNombre: "",
+        clienteDireccion: "",
+        clienteEmail: "",
+        clienteTelefono: "",
+        formaPago: "01",
+        items: [],
+    };
+    let invoiceErrors = {}; // Para rastrear campos inválidos: { clienteID: true, items: true }
+    let newItem = {
+        codigo: "",
+        nombre: "",
+        cantidad: 1,
+        precio: 0,
+        codigoIVA: "4",
+        porcentajeIVA: 15,
+    };
 
-  // --- CONFIGURACIÓN Y FACTURACIÓN ---
-  let config = { RUC: '', RazonSocial: '', NombreComercial: '', Direccion: '', P12Path: '', P12Password: '', Ambiente: 1, Estab: '001', PtoEmi: '001', Obligado: false, StoragePath: '' }
-  let invoice = { secuencial: '000000001', clienteID: '', clienteNombre: '', clienteDireccion: '', clienteEmail: '', clienteTelefono: '', formaPago: '01', items: [] }
-  let invoiceErrors = {} // Para rastrear campos inválidos: { clienteID: true, items: true }
-  let newItem = { codigo: "", nombre: "", cantidad: 1, precio: 0, codigoIVA: "4", porcentajeIVA: 15 }
-  
-  let clientSearch = ''
-  let productSearch = ''
-  let showPassword = false
+    let clientSearch = "";
+    let productSearch = "";
+    let showPassword = false;
 
-  // --- GESTIÓN DE PRODUCTOS ---
-  let products = []
-  let editingProduct = { SKU: '', Name: '', Price: 0, Stock: 0, TaxCode: "4", TaxPercentage: 15 }
+    // --- GESTIÓN DE PRODUCTOS ---
+    let products = [];
+    let editingProduct = {
+        SKU: "",
+        Name: "",
+        Price: 0,
+        Stock: 0,
+        TaxCode: "4",
+        TaxPercentage: 15,
+    };
 
-  // --- GESTIÓN DE CLIENTES ---
-  let clients = []
-  let editingClient = { ID: '', TipoID: '05', Nombre: '', Direccion: '', Email: '', Telefono: '' }
+    // --- GESTIÓN DE CLIENTES ---
+    let clients = [];
+    let editingClient = {
+        ID: "",
+        TipoID: "05",
+        Nombre: "",
+        Direccion: "",
+        Email: "",
+        Telefono: "",
+    };
 
-  // --- ESTADO SINCRONIZACIÓN Y AUDITORÍA ---
-  let syncLogs = []
-  let mailLogs = []
-  let selectedLog = null
-  let backups = []
+    // --- ESTADO SINCRONIZACIÓN Y AUDITORÍA ---
+    let syncLogs = [];
+    let mailLogs = [];
+    let selectedLog = null;
+    let backups = [];
 
-  async function refreshSyncLogs() {
-      loading = true
-      try { 
-          const [sLogs, mLogs, bkps] = await Promise.all([GetSyncLogs(), GetMailLogs(), GetBackups()])
-          syncLogs = sLogs || []
-          mailLogs = mLogs || []
-          backups = bkps || []
-      } catch (e) { 
-          console.error(e) 
-      } finally { 
-          loading = false 
-      }
-  }
+    // --- DASHBOARD CHARTS ---
+    let dashboardCharts = { revenueBar: "", clientsPie: "" };
 
-  async function handleCreateBackup() {
-      loading = true
-      try {
-          const err = await CreateBackup()
-          if (err) showToast("Error: " + err, 'error')
-          else {
-              showToast("Respaldo creado exitosamente", 'success')
-              backups = await GetBackups()
-          }
-      } catch (e) { showToast(e, 'error') }
-      finally { loading = false }
-  }
+    // --- DASHBOARD & HISTORIAL ---
+    let stats = {
+        totalVentas: 0,
+        totalFacturas: 0,
+        pendientes: 0,
+        sriOnline: true,
+        salesTrend: [],
+    };
+    let topProducts = [];
+    let historial = [];
+    let historialSearch = "";
+    let dateRange = { start: "", end: "" };
 
-  async function handleSelectBackupFolder() {
-      const path = await SelectBackupPath()
-      if (path) showToast("Ruta seleccionada: " + path + ". (Recuerde guardar en Configuración)", 'info')
-      // Nota: Idealmente actualizaríamos config.StoragePath aquí si el usuario confirma
-  }
+    // --- COMPUTED ---
+    $: subtotal = invoice.items.reduce(
+        (sum, item) => sum + item.cantidad * item.precio,
+        0,
+    );
+    $: iva = invoice.items.reduce(
+        (sum, item) =>
+            sum + item.cantidad * item.precio * (item.porcentajeIVA / 100),
+        0,
+    );
+    $: total = subtotal + iva;
 
-  // --- DASHBOARD & HISTORIAL ---
-  let stats = { totalVentas: 0, totalFacturas: 0, pendientes: 0, sriOnline: true, salesTrend: [] }
-  let topProducts = []
-  let historial = []
-  let historialSearch = ''
-  let dateRange = { start: '', end: '' }
+    // Smart Search logic
+    const handleHistorySearch = debounce(async (term) => {
+        if (term.length > 1) {
+            loading = true;
+            try {
+                historial = await SearchInvoicesSmart(term);
+            } catch (e) {
+                console.error(e);
+            } finally {
+                loading = false;
+            }
+        } else if (term.length === 0) {
+            loadFacturasPage();
+        }
+    }, 400);
 
-  // --- COMPUTED ---
-  $: subtotal = invoice.items.reduce((sum, item) => sum + (item.cantidad * item.precio), 0)
-  $: iva = invoice.items.reduce((sum, item) => sum + (item.cantidad * item.precio * (item.porcentajeIVA / 100)), 0)
-  $: total = subtotal + iva
-  $: filteredHistorial = (historial || []).filter(f => {
-      const cliente = f.cliente || '';
-      const secuencial = f.secuencial || '';
-      return cliente.toLowerCase().includes(historialSearch.toLowerCase()) || 
-             secuencial.includes(historialSearch)
-  })
+    // Use the search result directly, no manual filtering needed anymore for smart search
+    $: filteredHistorial = historial;
 
-  // Resetear scroll al cambiar de pestaña
-  $: if (activeTab && contentArea) contentArea.scrollTop = 0
+    // Resetear scroll al cambiar de pestaña
+    $: if (activeTab && contentArea) contentArea.scrollTop = 0;
 
-  onMount(() => {
-      // Timeout de seguridad por si el backend tarda demasiado
-      const safetyTimer = setTimeout(() => {
-          initialLoading = false;
-          loading = false;
-      }, 8000);
+    onMount(() => {
+        // Timeout de seguridad por si el backend tarda demasiado
+        const safetyTimer = setTimeout(() => {
+            initialLoading = false;
+            loading = false;
+        }, 8000);
 
-      // Cargar datos y manejar Splash Screen
-      loadData().finally(() => {
-          clearTimeout(safetyTimer);
-          setTimeout(() => {
-              initialLoading = false;
-          }, 2000); 
-      });
-      
-      EventsOn("toast-notification", (data) => {
-          showToast(data.message, data.type)
-          if (data.type === 'success') refreshDashboard()
-      })
-  })
+        // Cargar datos y manejar Splash Screen
+        loadData().finally(() => {
+            clearTimeout(safetyTimer);
+            setTimeout(() => {
+                initialLoading = false;
+            }, 2000);
+        });
 
-  async function loadData() {
-    loading = true
-    try {
-      // 1. Verificar Licencia
-      const licensed = await CheckLicense()
-      if (!licensed) {
-          isLicensed = false
-          return 
-      }
-      isLicensed = true
+        EventsOn("toast-notification", (data) => {
+            showToast(data.message, data.type);
+            if (data.type === "success") refreshDashboard();
+        });
+    });
 
-      const cfg = await GetEmisorConfig()
-      
-      // Detectar si es configuración virgen o dummy (creada por seed o licencia)
-      const isDefaultRUC = cfg && (cfg.RUC === "1790011223001" || cfg.RUC === "9999999999999");
-      const isMissingData = !cfg || !cfg.RazonSocial || cfg.RazonSocial === "EMISOR DE PRUEBA S.A." || cfg.RazonSocial === "Nuevo Usuario";
+    // --- KEYBOARD SHORTCUTS HANDLER ---
+    function handleGlobalKeydown(event) {
+        // Ignorar si el usuario está escribiendo en un input
+        if (
+            ["INPUT", "TEXTAREA", "SELECT"].includes(
+                document.activeElement.tagName,
+            )
+        ) {
+            // Permitir Esc para salir de foco
+            if (event.key === "Escape") document.activeElement.blur();
+            return;
+        }
 
-      if (!cfg || isDefaultRUC || isMissingData) {
-          showWizard = true
-          if (cfg) config = cfg // Cargar lo que haya (ej: Licencia)
-      } else {
-          config = cfg
-      }
-      
-      // Cargar el resto aunque no haya config completa (para que la UI no rompa)
-      const [prods, cli, seq] = await Promise.all([
-          GetProducts(),
-          GetClients(),
-          GetNextSecuencial()
-      ])
-      
-      products = prods || []
-      clients = cli || []
-      invoice.secuencial = seq || "000000001"
-      
-      await refreshDashboard()
-    } catch (e) { 
-      console.error("Error arrancando:", e) 
-      showToast("Error de conexión o arranque: " + e, 'error')
-    } finally {
-      loading = false 
-    }
-  }
+        // Ctrl/Cmd + S: Guardar (Contextual)
+        if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+            event.preventDefault();
+            if (activeTab === "config") handleSaveConfig();
+            if (activeTab === "products") handleSaveProduct();
+            if (activeTab === "clients") handleSaveClient();
+            if (activeTab === "invoice")
+                showToast("Use el botón para emitir (Seguridad)", "info");
+        }
 
-  async function handleActivation() {
-      const licenseRegex = /^KSH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
-      const key = licenseKeyInput.trim().toUpperCase();
-      
-      if (!licenseRegex.test(key)) {
-          return showToast("Formato inválido. Debe ser KSH-XXXX-XXXX-XXXX", "error");
-      }
+        // Ctrl/Cmd + N: Nueva Factura
+        if ((event.ctrlKey || event.metaKey) && event.key === "n") {
+            event.preventDefault();
+            activeTab = "invoice";
+            // Opcional: Resetear factura aquí si se desea
+        }
 
-      loading = true;
-      try {
-          const res = await ActivateLicense(key);
-          if (res.startsWith("Éxito")) {
-              showToast(res, "success");
-              isLicensed = true;
-              await loadData(); // Cargar datos del sistema
-          } else {
-              showToast(res, "error");
-          }
-      } catch (e) {
-          showToast("Error crítico: " + e, "error");
-      } finally {
-          loading = false;
-      }
-  }
-
-  function onWizardComplete() {
-      showWizard = false;
-      loadData();
-  }
-
-  const handleClientSearchInput = debounce(async (e) => {
-      const term = e.target.value;
-      if (term.length > 2) {
-          await SearchClients(term);
-      }
-  }, 400);
-
-  // Paginación
-  let currentPage = 1
-  let pageSize = 10
-  let totalFacturas = 0
-  $: totalPages = Math.ceil(totalFacturas / pageSize)
-
-  // Inicializar fechas
-  const d = new Date()
-  dateRange.start = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
-  dateRange.end = new Date().toISOString().split('T')[0]
-
-  async function refreshDashboard() {
-      try {
-          stats = await GetDashboardStats(dateRange.start, dateRange.end)
-          await loadFacturasPage()
-          topProducts = await GetTopProducts() || []
-      } catch (e) {
-          console.error("Error refreshing dashboard:", e)
-      }
-  }
-
-  // Auto-refrescar cuando cambian las fechas
-  $: if (dateRange.start || dateRange.end) {
-      if (isLicensed) refreshDashboard();
-  }
-
-  async function loadFacturasPage() {
-      const res = await GetFacturasPaginated(currentPage, pageSize)
-      historial = res.data || []
-      totalFacturas = res.total
-  }
-
-  function changePage(newPage) {
-      if (newPage >= 1 && newPage <= totalPages) {
-          currentPage = newPage
-          loadFacturasPage()
-      }
-  }
-
-  function getBarHeight(val) {
-      if (!stats.salesTrend || stats.salesTrend.length === 0) return 0;
-      const max = Math.max(...stats.salesTrend.map(d => d.total));
-      if (max === 0) return 0;
-      return (val / max) * 100;
-  }
-
-  async function handleExportExcel() {
-      loading = true
-      try {
-          const res = await ExportSalesExcel(dateRange.start, dateRange.end)
-          showToast(res, res.includes('Error') ? 'error' : 'success')
-      } catch (err) {
-          showToast("Error al exportar: " + err, 'error')
-      } finally {
-          loading = false
-      }
-  }
-
-  function showToast(message, type = 'success') {
-    const id = Date.now() + Math.random();
-    
-    // 1. Agregar a Toast Stack (UI Efímera)
-    toasts = [...toasts, { id, message, type }]
-    if (toasts.length > 3) {
-        toasts = toasts.slice(1) // Mantener solo los 3 más recientes
-    }
-    
-    // Auto-eliminar después de 6 segundos
-    setTimeout(() => {
-        toasts = toasts.filter(t => t.id !== id)
-    }, 6000)
-
-    // 2. Agregar a Historial de Notificaciones (Persistente en sesión)
-    notifications = [{ id, message, type, time: new Date() }, ...notifications]
-  }
-
-  function showConfirmation(title, message, callback) {
-      confirmationModal = { show: true, title, message, onConfirm: callback }
-  }
-
-  function handleConfirm() {
-      if (confirmationModal.onConfirm) confirmationModal.onConfirm()
-      confirmationModal.show = false
-  }
-
-  async function handleSelectCert() {
-    const path = await SelectCertificate()
-    if (path) config.P12Path = path
-  }
-
-  async function handleSelectStorage() {
-    const path = await SelectStoragePath()
-    if (path) config.StoragePath = path
-  }
-
-  async function handleTestSMTP() {
-      if (!config.SMTPHost || !config.SMTPUser || !config.SMTPPassword) {
-          return showToast("Complete los datos de correo primero", "error");
-      }
-      loading = true;
-      try {
-          const res = await TestSMTPConnection(config);
-          showToast(res, res.includes('Error') ? 'error' : 'success');
-      } catch (e) {
-          showToast("Fallo crítico: " + e, "error");
-      } finally {
-          loading = false;
-      }
-  }
-
-  async function handleSaveConfig() {
-    loading = true
-    try {
-      config.Ambiente = parseInt(config.Ambiente)
-      config.SMTPPort = parseInt(config.SMTPPort)
-      const res = await SaveEmisorConfig(config)
-      if (res.startsWith("Error")) showToast(res, 'error')
-      else showToast(res, 'success')
-    } catch (err) {
-      showToast(err, 'error')
-    } finally {
-      loading = false
-    }
-  }
-
-  async function handleOpenPDF(clave) {
-    showToast(await OpenFacturaPDF(clave), 'success')
-  }
-
-  async function handleOpenXML(clave) {
-    const res = await OpenInvoiceXML(clave)
-    showToast(res, res.includes('Error') ? 'error' : 'success')
-  }
-
-  async function handleOpenFolder(clave) {
-    const res = await OpenInvoiceFolder(clave)
-    showToast(res, res.includes('Error') ? 'error' : 'success')
-  }
-
-  async function handleResendEmail(clave) {
-      const res = await ResendInvoiceEmail(clave)
-      showToast(res, res.includes('Error') ? 'error' : 'success')
-  }
-
-  async function handleSaveProduct() {
-    const res = await SaveProduct(editingProduct)
-    showToast(res, res.includes('Error') ? 'error' : 'success')
-    editingProduct = { SKU: '', Name: '', Price: 0, Stock: 0, TaxCode: "4", TaxPercentage: 15 }
-    products = await GetProducts()
-  }
-
-  async function handleDeleteProduct(sku) {
-    showConfirmation('Eliminar Producto', '¿Estás seguro de que deseas eliminar este producto?', async () => {
-        const res = await DeleteProduct(sku)
-        showToast(res, res.includes('Error') ? 'error' : 'success')
-        products = await GetProducts()
-    })
-  }
-
-  function selectProduct(p) {
-    const taxCode = p.TaxCode || (p.TaxPercentage > 0 ? "4" : "0");
-    const taxPerc = p.TaxPercentage !== undefined ? p.TaxPercentage : (p.TaxCode == "4" ? 15 : 0);
-    newItem = { codigo: p.SKU, nombre: p.Name, cantidad: 1, precio: p.Price, codigoIVA: taxCode, porcentajeIVA: taxPerc }
-    productSearch = ""
-  }
-
-  async function handleSaveClient() {
-    const res = await SaveClient(editingClient)
-    showToast(res, res.includes('Error') ? 'error' : 'success')
-    editingClient = { ID: '', TipoID: '05', Nombre: '', Direccion: '', Email: '', Telefono: '' }
-    clients = await GetClients()
-  }
-
-  async function handleDeleteClient(id) {
-    showConfirmation('Eliminar Cliente', '¿Estás seguro de que deseas eliminar este cliente?', async () => {
-        const res = await DeleteClient(id)
-        showToast(res, res.includes('Error') ? 'error' : 'success')
-        clients = await GetClients()
-    })
-  }
-
-  function selectClient(c) {
-    invoice.clienteID = c.ID
-    invoice.clienteNombre = c.Nombre
-    invoice.clienteDireccion = c.Direccion
-    invoice.clienteEmail = c.Email || ''
-    invoice.clienteTelefono = c.Telefono || ''
-    clientSearch = ""
-  }
-
-  async function handleSyncNow() {
-      const msg = await TriggerSyncManual()
-      showToast(msg, 'info')
-      setTimeout(refreshSyncLogs, 1000)
-  }
-
-  function formatJSON(str) {
-      if (!str) return '';
-      try { const obj = JSON.parse(str); return JSON.stringify(obj, null, 2); } catch (e) { return str; }
-  }
-
-  function addItem() {
-    if (!newItem.nombre || newItem.precio <= 0) return
-    invoice.items = [...invoice.items, { ...newItem }]
-    newItem = { codigo: "", nombre: "", cantidad: 1, precio: 0, codigoIVA: "4", porcentajeIVA: 15 }
-  }
-
-  function removeItem(index) {
-    invoice.items = invoice.items.filter((_, i) => i !== index)
-  }
-
-  async function handleEmit() {
-    // Reset errores
-    invoiceErrors = {}
-    let isValid = true
-
-    if (!invoice.clienteID) { invoiceErrors.clienteID = true; isValid = false; }
-    if (!invoice.clienteNombre) { invoiceErrors.clienteNombre = true; isValid = false; }
-    if (!invoice.clienteDireccion) { invoiceErrors.clienteDireccion = true; isValid = false; }
-    if (!invoice.clienteEmail || !invoice.clienteEmail.includes('@')) { invoiceErrors.clienteEmail = true; isValid = false; }
-    
-    if (invoice.items.length === 0) { 
-        showToast("Agregue al menos un producto", 'error')
-        return
+        // Navegación rápida por tabs (1-6)
+        if ((event.ctrlKey || event.metaKey) && !isNaN(parseInt(event.key))) {
+            const num = parseInt(event.key);
+            const tabs = [
+                "dashboard",
+                "invoice",
+                "products",
+                "clients",
+                "history",
+                "quotations",
+            ];
+            if (num >= 1 && num <= tabs.length) {
+                event.preventDefault();
+                activeTab = tabs[num - 1];
+            }
+        }
     }
 
-    if (!isValid) {
-      showToast("Por favor complete los campos obligatorios marcados en rojo", 'error')
-      return
+    async function refreshSyncLogs() {
+        loading = true;
+        try {
+            const [sLogs, mLogs, bkps] = await Promise.all([
+                GetSyncLogs(),
+                GetMailLogs(),
+                GetBackups(),
+            ]);
+            syncLogs = sLogs || [];
+            mailLogs = mLogs || [];
+            backups = bkps || [];
+        } catch (e) {
+            console.error(e);
+        } finally {
+            loading = false;
+        }
     }
 
-    loading = true
-    try {
-      const dto = {
-        secuencial: invoice.secuencial,
-        clienteID: invoice.clienteID,
-        clienteNombre: invoice.clienteNombre,
-        clienteDireccion: invoice.clienteDireccion,
-        clienteEmail: invoice.clienteEmail,
-        clienteTelefono: invoice.clienteTelefono,
-        observacion: invoice.observacion,
-        formaPago: invoice.formaPago,
-        items: invoice.items.map(i => ({
-            codigo: i.codigo, nombre: i.nombre, cantidad: parseFloat(i.cantidad),
-            precio: parseFloat(i.precio), codigoIVA: i.codigoIVA.toString(), porcentajeIVA: parseFloat(i.porcentajeIVA)
-        }))
-      }
-      const result = await CreateInvoice(dto)
-      if (result.startsWith("Éxito")) {
-        showToast(result, 'success')
-        invoice.secuencial = (parseInt(invoice.secuencial) + 1).toString().padStart(9, '0')
-        invoice.items = []
-        await refreshDashboard()
-      } else {
-        showToast(result, 'error')
-      }
-    } catch (err) {
-      showToast("Error crítico: " + err, 'error')
-    } finally {
-      loading = false
+    async function handleCreateBackup() {
+        loading = true;
+        try {
+            const err = await CreateBackup();
+            if (err) showToast("Error: " + err, "error");
+            else {
+                showToast("Respaldo creado exitosamente", "success");
+                backups = await GetBackups();
+            }
+        } catch (e) {
+            showToast(e, "error");
+        } finally {
+            loading = false;
+        }
     }
-  }
+
+    async function handleSelectBackupFolder() {
+        const path = await SelectBackupPath();
+        if (path)
+            showToast(
+                "Ruta seleccionada: " +
+                    path +
+                    ". (Recuerde guardar en Configuración)",
+                "info",
+            );
+    }
+
+    async function loadData() {
+        loading = true;
+        try {
+            const licensed = await CheckLicense();
+            if (!licensed) {
+                isLicensed = false;
+                return;
+            }
+            isLicensed = true;
+
+            const cfg = await GetEmisorConfig();
+
+            const isDefaultRUC =
+                cfg &&
+                (cfg.RUC === "1790011223001" || cfg.RUC === "9999999999999");
+            const isMissingData =
+                !cfg ||
+                !cfg.RazonSocial ||
+                cfg.RazonSocial === "EMISOR DE PRUEBA S.A." ||
+                cfg.RazonSocial === "Nuevo Usuario";
+
+            if (!cfg || isDefaultRUC || isMissingData) {
+                showWizard = true;
+                if (cfg) config = cfg;
+            } else {
+                config = cfg;
+            }
+
+            const [prods, cli, seq] = await Promise.all([
+                GetProducts(),
+                GetClients(),
+                GetNextSecuencial(),
+            ]);
+
+            products = prods || [];
+            clients = cli || [];
+            invoice.secuencial = seq || "000000001";
+
+            await refreshDashboard();
+        } catch (e) {
+            console.error("Error arrancando:", e);
+            showToast("Error de conexión o arranque: " + e, "error");
+        } finally {
+            loading = false;
+        }
+    }
+
+    async function handleActivation() {
+        const licenseRegex = /^KSH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+        const key = licenseKeyInput.trim().toUpperCase();
+
+        if (!licenseRegex.test(key)) {
+            return showToast(
+                "Formato inválido. Debe ser KSH-XXXX-XXXX-XXXX",
+                "error",
+            );
+        }
+
+        loading = true;
+        try {
+            const res = await ActivateLicense(key);
+            if (res.startsWith("Éxito")) {
+                showToast(res, "success");
+                isLicensed = true;
+                await loadData();
+            } else {
+                showToast(res, "error");
+            }
+        } catch (e) {
+            showToast("Error crítico: " + e, "error");
+        } finally {
+            loading = false;
+        }
+    }
+
+    function onWizardComplete() {
+        showWizard = false;
+        loadData();
+    }
+
+    const handleClientSearchInput = debounce(async (e) => {
+        const term = e.target.value;
+        if (term.length > 2) {
+            await SearchClients(term);
+        }
+    }, 400);
+
+    // Paginación
+    let currentPage = 1;
+    let pageSize = 10;
+    let totalFacturas = 0;
+    $: totalPages = Math.ceil(totalFacturas / pageSize);
+
+    // Inicializar fechas
+    const d = new Date();
+    dateRange.start = new Date(d.getFullYear(), d.getMonth(), 1)
+        .toISOString()
+        .split("T")[0];
+    dateRange.end = new Date().toISOString().split("T")[0];
+
+    async function refreshDashboard() {
+        loading = true;
+        try {
+            stats = await GetDashboardStats(dateRange.start, dateRange.end);
+            await loadFacturasPage();
+            topProducts = (await GetTopProducts()) || [];
+            dashboardCharts = await GetStatisticsCharts();
+            showToast("Datos actualizados", "info");
+        } catch (e) {
+            console.error("Error refreshing dashboard:", e);
+            showToast("Error actualizando: " + e, "error");
+        } finally {
+            loading = false;
+        }
+    }
+
+    // Auto-refrescar cuando cambian las fechas
+    $: if (dateRange.start || dateRange.end) {
+        if (isLicensed) refreshDashboard();
+    }
+
+    async function loadFacturasPage() {
+        const res = await GetFacturasPaginated(currentPage, pageSize);
+        historial = res.data || [];
+        totalFacturas = res.total;
+    }
+
+    function changePage(newPage) {
+        if (newPage >= 1 && newPage <= totalPages) {
+            currentPage = newPage;
+            loadFacturasPage();
+        }
+    }
+
+    async function handleExportExcel() {
+        loading = true;
+        try {
+            const res = await ExportSalesExcel(dateRange.start, dateRange.end);
+            showToast(res, res.includes("Error") ? "error" : "success");
+        } catch (err) {
+            showToast("Error al exportar: " + err, "error");
+        } finally {
+            loading = false;
+        }
+    }
+
+    function showToast(message, type = "success") {
+        const id = Date.now() + Math.random();
+        toasts = [...toasts, { id, message, type }];
+        if (toasts.length > 3) toasts = toasts.slice(1);
+        setTimeout(() => {
+            toasts = toasts.filter((t) => t.id !== id);
+        }, 6000);
+        notifications = [
+            { id, message, type, time: new Date() },
+            ...notifications,
+        ];
+    }
+
+    function showConfirmation(title, message, callback) {
+        confirmationModal = { show: true, title, message, onConfirm: callback };
+    }
+
+    function handleConfirm() {
+        if (confirmationModal.onConfirm) confirmationModal.onConfirm();
+        confirmationModal.show = false;
+    }
+
+    async function handleSelectCert() {
+        const path = await SelectCertificate();
+        if (path) config.P12Path = path;
+    }
+
+    async function handleSelectStorage() {
+        const path = await SelectStoragePath();
+        if (path) config.StoragePath = path;
+    }
+
+    async function handleTestSMTP() {
+        if (!config.SMTPHost || !config.SMTPUser || !config.SMTPPassword) {
+            return showToast("Complete los datos de correo primero", "error");
+        }
+        loading = true;
+        try {
+            const res = await TestSMTPConnection(config);
+            showToast(res, res.includes("Error") ? "error" : "success");
+        } catch (e) {
+            showToast("Fallo crítico: " + e, "error");
+        } finally {
+            loading = false;
+        }
+    }
+
+    async function handleSaveConfig() {
+        loading = true;
+        try {
+            config.Ambiente = parseInt(config.Ambiente);
+            config.SMTPPort = parseInt(config.SMTPPort);
+            const res = await SaveEmisorConfig(config);
+            if (res.startsWith("Error")) showToast(res, "error");
+            else showToast(res, "success");
+        } catch (err) {
+            showToast(err, "error");
+        } finally {
+            loading = false;
+        }
+    }
+
+    async function handleOpenPDF(clave) {
+        showToast(await OpenFacturaPDF(clave), "success");
+    }
+
+    async function handleOpenXML(clave) {
+        const res = await OpenInvoiceXML(clave);
+        showToast(res, res.includes("Error") ? "error" : "success");
+    }
+
+    async function handleOpenFolder(clave) {
+        const res = await OpenInvoiceFolder(clave);
+        showToast(res, res.includes("Error") ? "error" : "success");
+    }
+
+    async function handleResendEmail(clave) {
+        const res = await ResendInvoiceEmail(clave);
+        showToast(res, res.includes("Error") ? "error" : "success");
+    }
+
+    async function handleSaveProduct() {
+        const res = await SaveProduct(editingProduct);
+        showToast(res, res.includes("Error") ? "error" : "success");
+        editingProduct = {
+            SKU: "",
+            Name: "",
+            Price: 0,
+            Stock: 0,
+            TaxCode: "4",
+            TaxPercentage: 15,
+        };
+        products = await GetProducts();
+    }
+
+    async function handleDeleteProduct(sku) {
+        showConfirmation(
+            "Eliminar Producto",
+            "¿Estás seguro de que deseas eliminar este producto?",
+            async () => {
+                const res = await DeleteProduct(sku);
+                showToast(res, res.includes("Error") ? "error" : "success");
+                products = await GetProducts();
+            },
+        );
+    }
+
+    function selectProduct(p) {
+        const taxCode = p.TaxCode || (p.TaxPercentage > 0 ? "4" : "0");
+        const taxPerc =
+            p.TaxPercentage !== undefined
+                ? p.TaxPercentage
+                : p.TaxCode == "4"
+                  ? 15
+                  : 0;
+        newItem = {
+            codigo: p.SKU,
+            nombre: p.Name,
+            cantidad: 1,
+            precio: p.Price,
+            codigoIVA: taxCode,
+            porcentajeIVA: taxPerc,
+        };
+        productSearch = "";
+    }
+
+    async function handleSaveClient() {
+        const res = await SaveClient(editingClient);
+        showToast(res, res.includes("Error") ? "error" : "success");
+        editingClient = {
+            ID: "",
+            TipoID: "05",
+            Nombre: "",
+            Direccion: "",
+            Email: "",
+            Telefono: "",
+        };
+        clients = await GetClients();
+    }
+
+    async function handleDeleteClient(id) {
+        showConfirmation(
+            "Eliminar Cliente",
+            "¿Estás seguro de que deseas eliminar este cliente?",
+            async () => {
+                const res = await DeleteClient(id);
+                showToast(res, res.includes("Error") ? "error" : "success");
+                clients = await GetClients();
+            },
+        );
+    }
+
+    function selectClient(c) {
+        invoice.clienteID = c.ID;
+        invoice.clienteNombre = c.Nombre;
+        invoice.clienteDireccion = c.Direccion;
+        invoice.clienteEmail = c.Email || "";
+        invoice.clienteTelefono = c.Telefono || "";
+        clientSearch = "";
+    }
+
+    async function handleSyncNow() {
+        const msg = await TriggerSyncManual();
+        showToast(msg, "info");
+        setTimeout(refreshSyncLogs, 1000);
+    }
+
+    function formatJSON(str) {
+        if (!str) return "";
+        try {
+            const obj = JSON.parse(str);
+            return JSON.stringify(obj, null, 2);
+        } catch (e) {
+            return str;
+        }
+    }
+
+    function addItem() {
+        if (!newItem.nombre || newItem.precio <= 0) return;
+        invoice.items = [...invoice.items, { ...newItem }];
+        newItem = {
+            codigo: "",
+            nombre: "",
+            cantidad: 1,
+            precio: 0,
+            codigoIVA: "4",
+            porcentajeIVA: 15,
+        };
+    }
+
+    function removeItem(index) {
+        invoice.items = invoice.items.filter((_, i) => i !== index);
+    }
+
+    async function handleEmit() {
+        invoiceErrors = {};
+        let isValid = true;
+
+        if (!invoice.clienteID) {
+            invoiceErrors.clienteID = true;
+            isValid = false;
+        }
+        if (!invoice.clienteNombre) {
+            invoiceErrors.clienteNombre = true;
+            isValid = false;
+        }
+        if (!invoice.clienteDireccion) {
+            invoiceErrors.clienteDireccion = true;
+            isValid = false;
+        }
+        if (!invoice.clienteEmail || !invoice.clienteEmail.includes("@")) {
+            invoiceErrors.clienteEmail = true;
+            isValid = false;
+        }
+
+        if (invoice.items.length === 0) {
+            showToast("Agregue al menos un producto", "error");
+            return;
+        }
+
+        if (!isValid) {
+            showToast(
+                "Por favor complete los campos obligatorios marcados en rojo",
+                "error",
+            );
+            return;
+        }
+
+        loading = true;
+        try {
+            const dto = {
+                secuencial: invoice.secuencial,
+                clienteID: invoice.clienteID,
+                clienteNombre: invoice.clienteNombre,
+                clienteDireccion: invoice.clienteDireccion,
+                clienteEmail: invoice.clienteEmail,
+                clienteTelefono: invoice.clienteTelefono,
+                observacion: invoice.observacion,
+                formaPago: invoice.formaPago,
+                items: invoice.items.map((i) => ({
+                    codigo: i.codigo,
+                    nombre: i.nombre,
+                    cantidad: parseFloat(i.cantidad),
+                    precio: parseFloat(i.precio),
+                    codigoIVA: i.codigoIVA.toString(),
+                    porcentajeIVA: parseFloat(i.porcentajeIVA),
+                })),
+            };
+            const result = await CreateInvoice(dto);
+            if (result.startsWith("Éxito")) {
+                showToast(result, "success");
+                invoice.secuencial = (parseInt(invoice.secuencial) + 1)
+                    .toString()
+                    .padStart(9, "0");
+                invoice.items = [];
+                await refreshDashboard();
+            } else {
+                showToast(result, "error");
+            }
+        } catch (err) {
+            showToast("Error crítico: " + err, "error");
+        } finally {
+            loading = false;
+        }
+    }
+
+    function handleConvertToInvoice(event) {
+        const dto = event.detail;
+        invoice.clienteID = dto.clienteID;
+        invoice.clienteNombre = dto.clienteNombre;
+        invoice.clienteDireccion = dto.clienteDireccion;
+        invoice.clienteEmail = dto.clienteEmail;
+        invoice.clienteTelefono = dto.clienteTelefono;
+        invoice.observacion = dto.observacion;
+
+        invoice.items = dto.items.map((i) => ({
+            codigo: i.codigo,
+            nombre: i.nombre,
+            cantidad: i.cantidad,
+            precio: i.precio,
+            codigoIVA: "2",
+            porcentajeIVA: i.porcentajeIVA,
+        }));
+
+        activeTab = "invoice";
+        showToast("Datos cargados desde Cotización", "info");
+    }
 </script>
 
+<svelte:window on:keydown={handleGlobalKeydown} />
+
 {#if initialLoading}
-    <div class="splash-screen" out:fade={{ duration: 800 }}>
+    <div class="splash-screen" out:fade={{ duration: 800, easing: cubicOut }}>
         <div class="splash-content">
-            <div class="logo-container-splash">
-                <h1 class="splash-title">KUSHKI</h1>
-                <div class="splash-line"></div>
-                <p class="splash-subtitle">FACTURACIÓN ELECTRÓNICA</p>
-            </div>
-            <div class="loader-bar">
-                <div class="loader-progress"></div>
-            </div>
+             <div class="splash-brand" in:fly="{{ y: 20, duration: 800, delay: 200 }}">
+                <img src={logo} alt="Kushki" style="width: 50px; height: auto;" />
+                <span class="gradient-text">KUSHKI</span>
+             </div>
+            <div class="loader-premium"></div>
         </div>
     </div>
 {/if}
 
 <main>
-  {#if !isLicensed}
-      <div class="license-overlay" in:fade={{ duration: 300 }}>
-          <div class="license-box card">
-              <div class="lock-icon">🔐</div>
-              <h2>Activación Requerida</h2>
-              <p>Bienvenido al Sistema de Facturación Kushki. <br>Ingresa tu clave de producto para continuar.</p>
-              
-              <div class="license-form">
-                  <input 
-                    bind:value={licenseKeyInput} 
-                    placeholder="KSH-XXXX-XXXX-XXXX" 
-                    class="text-center" 
-                    on:input={(e) => licenseKeyInput = e.target.value.toUpperCase()}
-                  />
-                  <button class="btn-primary full-width" on:click={handleActivation} disabled={loading}>
-                      {loading ? 'Verificando con Servidor...' : 'Activar Licencia'}
-                  </button>
-              </div>
-          </div>
-      </div>
-  {:else}
-      <Sidebar {activeTab} on:change={(e) => activeTab = e.detail} />
+    {#if !isLicensed}
+        <div class="license-overlay" in:fade={{ duration: 300 }}>
+            <div class="license-box card">
+                <div class="lock-icon">🔐</div>
+                <h2>Activación Requerida</h2>
+                <p>
+                    Bienvenido al Sistema de Facturación Kushki. <br />Ingresa
+                    tu clave de producto para continuar.
+                </p>
 
-  <section class="content" bind:this={contentArea}>
-    {#if activeTab === 'dashboard'}
-      <div class="panel dashboard-layout" in:fade={{ duration: 100 }}>
-        <div class="header-row">
-            <div>
-                <h1>Hola, {config.RazonSocial || 'Emisor'} 👋</h1>
-                <p class="subtitle">Aquí tienes el resumen de tu facturación.</p>
-            </div>
-            <div class="header-actions">
-                <div class="notification-wrapper">
-                    <button class="btn-icon-soft" on:click={() => showNotifications = !showNotifications} title="Notificaciones">
-                        🔔
-                        {#if notifications.length > 0}<span class="notification-badge"></span>{/if}
+                <div class="license-form">
+                    <input
+                        aria-label="Clave de producto"
+                        bind:value={licenseKeyInput}
+                        placeholder="KSH-XXXX-XXXX-XXXX"
+                        class="text-center"
+                        on:input={(e) =>
+                            (licenseKeyInput = e.target.value.toUpperCase())}
+                    />
+                    <button
+                        class="btn-primary full-width"
+                        on:click={handleActivation}
+                        disabled={loading}
+                    >
+                        {loading
+                            ? "Verificando con Servidor..."
+                            : "Activar Licencia"}
                     </button>
-                    
-                    {#if showNotifications}
-                        <div class="notification-panel" transition:fly={{ y: 10, duration: 200 }}>
-                            <div class="notif-header">
-                                <h4>Notificaciones</h4>
-                                <button class="link-btn-small" on:click={() => notifications = []}>Borrar todo</button>
-                            </div>
-                            <div class="notif-list">
-                                {#each notifications as n}
-                                    <div class="notif-item {n.type}">
-                                        <div class="notif-msg">{n.message}</div>
-                                        <div class="notif-time">{n.time.toLocaleTimeString()}</div>
+                </div>
+            </div>
+        </div>
+    {:else}
+        <Sidebar {activeTab} on:change={(e) => (activeTab = e.detail)} />
+
+        <section class="content" bind:this={contentArea}>
+            {#if activeTab === "dashboard"}
+                <div
+                    class="panel"
+                    in:fade={{ duration: 200, easing: cubicOut }}
+                >
+                    <div class="header-row">
+                        <div>
+                            <h1>Hola, <span class="gradient-text">{config.RazonSocial || "Emisor"}</span> 👋</h1>
+                            <p class="subtitle">
+                                Resumen general de facturación
+                            </p>
+                        </div>
+                        <div class="header-actions">
+                            <div class="notification-wrapper">
+                                <button
+                                    class="btn-icon-mini"
+                                    on:click={() =>
+                                        (showNotifications =
+                                            !showNotifications)}
+                                    title="Notificaciones"
+                                    aria-label="Notificaciones"
+                                >
+                                    🔔
+                                    {#if notifications.length > 0}<span
+                                            class="notification-badge"
+                                        ></span>{/if}
+                                </button>
+
+                                {#if showNotifications}
+                                    <div
+                                        class="notification-panel"
+                                        transition:fly={{
+                                            y: 10,
+                                            duration: 200,
+                                        }}
+                                    >
+                                        <div class="notif-header">
+                                            <h4>Notificaciones</h4>
+                                            <button
+                                                class="link-btn-small"
+                                                on:click={() =>
+                                                    (notifications = [])}
+                                                >Borrar todo</button
+                                            >
+                                        </div>
+                                        <div class="notif-list">
+                                            {#each notifications as n}
+                                                <div
+                                                    class="notif-item {n.type}"
+                                                >
+                                                    <div class="notif-msg">
+                                                        {n.message}
+                                                    </div>
+                                                    <div class="notif-time">
+                                                        {n.time.toLocaleTimeString()}
+                                                    </div>
+                                                </div>
+                                            {/each}
+                                            {#if notifications.length === 0}
+                                                <div class="empty-notif">
+                                                    No hay notificaciones
+                                                    recientes
+                                                </div>
+                                            {/if}
+                                        </div>
                                     </div>
-                                {/each}
-                                {#if notifications.length === 0}
-                                    <div class="empty-notif">No hay notificaciones recientes</div>
                                 {/if}
                             </div>
-                        </div>
-                    {/if}
-                </div>
 
-                <div class="date-selector">
-                    <span class="label-tiny">Desde</span>
-                    <input type="date" bind:value={dateRange.start} class="input-tiny" />
-                    <span class="label-tiny">Hasta</span>
-                    <input type="date" bind:value={dateRange.end} class="input-tiny" />
-                </div>
-                <button class="btn-icon-soft" on:click={refreshDashboard} title="Actualizar">🔄</button>
-            </div>
-        </div>
-        
-        <div class="kpi-row">
-            <div class="kpi-card glass">
-                <div class="kpi-icon mint">💰</div>
-                <div class="kpi-content">
-                    <div class="title">Ventas Totales</div>
-                    <div class="value gradient-text">${stats.totalVentas.toFixed(2)}</div>
-                </div>
-            </div>
-            <div class="kpi-card glass">
-                <div class="kpi-icon blue">📄</div>
-                <div class="kpi-content">
-                    <div class="title">Facturas</div>
-                    <div class="value">{stats.totalFacturas}</div>
-                </div>
-            </div>
-            <div class="kpi-card glass {stats.pendientes > 0 ? 'warning-border' : ''}">
-                <div class="kpi-icon orange">⚠️</div>
-                <div class="kpi-content">
-                    <div class="title">Pendientes</div>
-                    <div class="value">{stats.pendientes}</div>
-                </div>
-            </div>
-            <div class="kpi-card glass">
-                <div class="kpi-icon {stats.sriOnline ? 'green' : 'red'}">
-                    {stats.sriOnline ? '🌐' : '🔌'}
-                </div>
-                <div class="kpi-content">
-                    <div class="title">Estado SRI</div>
-                    <div class="status-badge {stats.sriOnline ? 'online' : 'offline'}">
-                        {stats.sriOnline ? 'ONLINE' : 'OFFLINE'}
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="section-chart glass">
-            <div class="chart-header">
-                <h3>Tendencia de Ventas (7 Días)</h3>
-            </div>
-            <div class="chart-container">
-                {#if stats.salesTrend && stats.salesTrend.length > 0}
-                    <div class="bar-chart">
-                        {#each stats.salesTrend as day}
-                            <div class="bar-group" title="{day.date}: ${day.total}">
-                                <div class="bar-value" style="bottom: {getBarHeight(day.total) + 5}%; opacity: {day.total > 0 ? 1 : 0}">${day.total > 0 ? day.total : ''}</div>
-                                <div class="bar" style="height: {getBarHeight(day.total)}%;"></div>
-                                <div class="label">{day.date.slice(5)}</div>
+                            <div class="input-group flex-row" style="gap: 8px; background: var(--bg-surface); padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+                                <input
+                                    type="date"
+                                    bind:value={dateRange.start}
+                                    aria-label="Fecha inicio"
+                                    style="border: none; background: transparent; padding: 6px; width: auto;"
+                                />
+                                <span style="color: var(--text-tertiary);">-</span>
+                                <input
+                                    type="date"
+                                    bind:value={dateRange.end}
+                                    aria-label="Fecha fin"
+                                    style="border: none; background: transparent; padding: 6px; width: auto;"
+                                />
                             </div>
-                        {/each}
+                            <button
+                                class="btn-secondary"
+                                on:click={refreshDashboard}
+                                title="Actualizar">🔄</button
+                            >
+                        </div>
                     </div>
-                {:else}
-                    <div class="empty-state">Sin datos suficientes para graficar</div>
-                {/if}
-            </div>
-        </div>
 
-        <div class="grid col-2">
-            <div class="card glass compact">
-                <h3>🏆 Top Productos</h3>
-                <div class="mini-table">
-                    {#each topProducts as p}
-                        <div class="mini-row">
-                            <div class="prod-name">{p.name}</div>
-                            <div class="prod-stat">{p.quantity} un.</div>
-                            <div class="prod-price">${p.total.toFixed(2)}</div>
-                        </div>
-                    {/each}
-                    {#if topProducts.length === 0}
-                        <div class="empty-state-small">Sin ventas aún</div>
-                    {/if}
-                </div>
-            </div>
-
-            <div class="card glass compact">
-                <div class="header-row">
-                    <h3>⚡ Actividad Reciente</h3>
-                    <button class="link-btn" on:click={() => activeTab = 'history'}>Ver todo →</button>
-                </div>
-                <div class="mini-table">
-                    {#each (historial || []).slice(0, 5) as f}
-                        <div class="mini-row">
-                            <span class="status-dot {f.estado}"></span>
-                            <div class="col-main">
-                                <span class="secuencial">{f.secuencial}</span>
-                                <span class="client">{f.cliente}</span>
+                    <div class="kpi-row">
+                        <!-- KPI Cards remain the same -->
+                        <div class="kpi-card">
+                            <div class="kpi-icon mint">💰</div>
+                            <div class="kpi-content">
+                                <div class="title">Ventas Totales</div>
+                                <div class="value gradient-text">
+                                    ${stats.totalVentas.toFixed(2)}
+                                </div>
                             </div>
-                            <div class="amount">${f.total.toFixed(2)}</div>
                         </div>
-                    {/each}
-                </div>
-            </div>
-        </div>
-      </div>
+                        <div class="kpi-card">
+                            <div class="kpi-icon blue">📄</div>
+                            <div class="kpi-content">
+                                <div class="title">Facturas</div>
+                                <div class="value">{stats.totalFacturas}</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-icon orange">⚠️</div>
+                            <div class="kpi-content">
+                                <div class="title">Pendientes</div>
+                                <div class="value">{stats.pendientes}</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card">
+                            <div
+                                class="kpi-icon {stats.sriOnline
+                                    ? 'green'
+                                    : 'red'}"
+                            >
+                                {stats.sriOnline ? "🌐" : "🔌"}
+                            </div>
+                            <div class="kpi-content">
+                                <div class="title">Estado SRI</div>
+                                <div class="flex-row">
+                                    <span
+                                        class="status-dot {stats.sriOnline
+                                            ? 'AUTORIZADO'
+                                            : 'PENDIENTE'}"
+                                    ></span>
+                                    <span
+                                        style="font-size: 14px; font-weight: 500;"
+                                        >{stats.sriOnline
+                                            ? "Online"
+                                            : "Offline"}</span
+                                    >
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
-    {:else if activeTab === 'history'}
-      <div class="panel" in:fade={{ duration: 100 }}>
-        <div class="header-row">
-            <h1>Historial de Transacciones</h1>
-            <div class="header-actions">
-                <button class="btn-secondary" on:click={handleExportExcel}>📊 Exportar Excel</button>
-                <button class="btn-secondary" on:click={loadFacturasPage}>🔄 Refrescar</button>
-            </div>
-        </div>
+                    <div class="dashboard-layout mt-4" style="display: flex; flex-direction: column; gap: 24px;">
+                        
+                        <!-- Row 1: Charts & Top Products -->
+                        <div class="charts-row" style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+                            <div class="section-chart card" style="min-height: 350px;">
+                                <div class="chart-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; height: 100%;">
+                                    <div class="chart-box">
+                                        <ChartFrame htmlContent={dashboardCharts.revenueBar} />
+                                    </div>
+                                    <div class="chart-box">
+                                        <ChartFrame htmlContent={dashboardCharts.clientsPie} />
+                                    </div>
+                                </div>
+                            </div>
 
-        <div class="card no-padding">
-             <!-- Toolbar Unificada -->
-             <div class="toolbar">
-                <div class="date-group">
-                    <span class="label-tiny">Desde</span>
-                    <input type="date" bind:value={dateRange.start} class="input-tiny" />
-                    <span class="label-tiny">Hasta</span>
-                    <input type="date" bind:value={dateRange.end} class="input-tiny" />
-                </div>
-                <div class="search-wrapper">
-                    <input class="search-input-compact" bind:value={historialSearch} placeholder="🔍 Buscar por cliente, RUC o secuencial..." />
-                </div>
-            </div>
-
-            <div class="table-container dense-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Estado</th>
-                            <th>Secuencial</th>
-                            <th>Fecha</th>
-                            <th>Cliente</th>
-                            <th class="text-right">Total</th>
-                            <th class="text-center">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each filteredHistorial as f}
-                            <tr>
-                                <td><span class="badge {f.estado}">{f.estado}</span></td>
-                                <td class="mono">{f.secuencial}</td>
-                                <td class="mono">{f.fecha}</td>
-                                <td>{f.cliente}</td>
-                                <td class="bold text-right">${f.total.toFixed(2)}</td>
-                                <td class="text-center">
-                                    {#if f.tienePDF}
-                                        <button class="btn-icon-mini" title="Ver PDF" on:click={() => handleOpenPDF(f.claveAcceso)}>📄</button>
-                                        <button class="btn-icon-mini" title="Email" on:click={() => handleResendEmail(f.claveAcceso)}>✉️</button>
+                            <div class="card compact">
+                                <h3>🏆 Top Productos</h3>
+                                <div class="linear-list">
+                                    {#each topProducts.slice(0, 5) as p}
+                                        <div class="linear-item">
+                                            <div class="item-info" style="flex:1">
+                                                {p.name}
+                                            </div>
+                                            <div class="item-value">
+                                                {p.quantity} un.
+                                            </div>
+                                        </div>
+                                    {/each}
+                                    {#if topProducts.length === 0}
+                                        <div class="empty-state-text" style="padding: 20px;">Sin datos</div>
                                     {/if}
-                                    <button class="btn-icon-mini" title="XML" on:click={() => handleOpenXML(f.claveAcceso)}>🌐</button>
-                                    <button class="btn-icon-mini" title="Carpeta" on:click={() => handleOpenFolder(f.claveAcceso)}>📂</button>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-                {#if filteredHistorial.length === 0}
-                    <div class="empty-state">No se encontraron transacciones</div>
-                {/if}
-            </div>
-            <div class="pagination-controls compact">
-                <button class="btn-secondary small" disabled={currentPage === 1} on:click={() => changePage(currentPage - 1)}>Anterior</button>
-                <span>Página {currentPage} de {totalPages || 1} ({totalFacturas} items)</span>
-                <button class="btn-secondary small" disabled={currentPage === totalPages} on:click={() => changePage(currentPage + 1)}>Siguiente</button>
-            </div>
-        </div>
-      </div>
-
-    {:else if activeTab === 'invoice'}
-      <div class="panel" in:fade={{ duration: 100 }}>
-        <div class="header-row">
-          <h1>Emitir Factura</h1>
-          <!-- Selector de Ambiente Interactivo -->
-          <div class="environment-toggle">
-              <span class="label">Ambiente:</span>
-              <button 
-                  class="toggle-btn {config.Ambiente === 1 ? 'test' : 'prod'}" 
-                  on:click={async () => {
-                      config.Ambiente = config.Ambiente === 1 ? 2 : 1;
-                      await handleSaveConfig();
-                      showToast(`Cambiado a entorno de ${config.Ambiente === 1 ? 'PRUEBAS' : 'PRODUCCIÓN'}`, 'info');
-                  }}
-                  title="Clic para cambiar entorno"
-              >
-                  {config.Ambiente === 1 ? '🧪 PRUEBAS' : '🚀 PRODUCCIÓN'}
-              </button>
-          </div>
-        </div>
-
-        <!-- SECCIÓN 1: DATOS DEL CLIENTE -->
-        <div class="card">
-          <div class="section-header">
-             <h3>👤 Datos del Cliente</h3>
-             <div class="secuencial-box">
-                <span class="label">Nro. Factura</span>
-                <span class="number">{config.Estab}-{config.PtoEmi}-{invoice.secuencial}</span>
-             </div>
-          </div>
-          
-          <div class="search-container mb-1">
-            <input 
-                bind:value={clientSearch} 
-                on:input={(e) => handleClientSearchInput(e)}
-                placeholder="🔍 Buscar cliente por nombre o RUC/CI..." 
-                class="full-search-input" 
-            />
-            {#if clientSearch.length > 0}
-                <div class="dropdown">
-                    {#each clients.filter(c => c.Nombre.toLowerCase().includes(clientSearch.toLowerCase()) || c.ID.includes(clientSearch)) as c}
-                        <button on:click={() => selectClient(c)}>{c.Nombre} ({c.ID})</button>
-                    {/each}
-                </div>
-            {/if}
-          </div>
-
-          <div class="client-grid">
-            <div class="field">
-                <label>Identificación</label>
-                <input bind:value={invoice.clienteID} class={invoiceErrors.clienteID ? 'invalid' : ''} placeholder="1712345678" />
-            </div>
-            <div class="field span-2">
-                <label>Razón Social</label>
-                <input bind:value={invoice.clienteNombre} class={invoiceErrors.clienteNombre ? 'invalid' : ''} placeholder="Nombre Cliente" />
-            </div>
-            <div class="field">
-                <label>Email</label>
-                <input bind:value={invoice.clienteEmail} class={invoiceErrors.clienteEmail ? 'invalid' : ''} placeholder="cliente@email.com" type="email" />
-            </div>
-            <div class="field span-2">
-                <label>Dirección</label>
-                <input bind:value={invoice.clienteDireccion} class={invoiceErrors.clienteDireccion ? 'invalid' : ''} placeholder="Dirección completa" />
-            </div>
-            <div class="field">
-                <label>Teléfono</label>
-                <input bind:value={invoice.clienteTelefono} placeholder="0991234567" />
-            </div>
-            <div class="field">
-                <label>Forma de Pago</label>
-                <select bind:value={invoice.formaPago} class="dark-select">
-                    <option value="01">Efectivo (01)</option>
-                    <option value="16">Tarjeta de Débito (16)</option>
-                    <option value="19">Tarjeta de Crédito (19)</option>
-                    <option value="20">Otros con SF (20)</option>
-                </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- SECCIÓN 2: PRODUCTOS -->
-        <div class="card">
-          <div class="section-header">
-            <h3>📦 Detalle de Productos</h3>
-          </div>
-
-          <div class="add-product-bar">
-             <div class="search-box-product">
-                <input bind:value={productSearch} placeholder="🔍 Buscar producto..." />
-                {#if productSearch.length > 0}
-                    <div class="dropdown">
-                        {#each products.filter(p => p.Name.toLowerCase().includes(productSearch.toLowerCase()) || p.SKU.includes(productSearch)) as p}
-                            <button on:click={() => selectProduct(p)}>{p.Name} - ${p.Price}</button>
-                        {/each}
-                    </div>
-                {/if}
-             </div>
-             
-             <!-- Campos de edición manual rápida -->
-             <input class="input-code" bind:value={newItem.codigo} placeholder="Código" />
-             <input class="input-desc" bind:value={newItem.nombre} placeholder="Descripción" />
-             <input class="input-qty" type="number" bind:value={newItem.cantidad} min="1" placeholder="Cant" />
-             <input class="input-price" type="number" step="0.01" bind:value={newItem.precio} placeholder="Precio" />
-             <select bind:value={newItem.codigoIVA} on:change={() => {
-                const map = { "0": 0, "2": 12, "4": 15, "5": 5 };
-                newItem.porcentajeIVA = map[newItem.codigoIVA];
-             }} class="dark-select input-tax">
-                <option value="4">15%</option>
-                <option value="5">5%</option>
-                <option value="0">0%</option>
-                <option value="2">12%</option>
-             </select>
-             <button class="btn-add" on:click={addItem}>Añadir</button>
-          </div>
-
-          <div class="table-container invoice-table">
-            <table>
-              <thead>
-                <tr>
-                  <th width="10%">Cant</th>
-                  <th width="40%">Descripción</th>
-                  <th width="15%" class="text-right">P. Unit</th>
-                  <th width="10%" class="text-center">IVA</th>
-                  <th width="15%" class="text-right">Total</th>
-                  <th width="5%"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each invoice.items as item, i (item)}
-                  <tr>
-                    <td class="text-center">{item.cantidad}</td>
-                    <td>{item.nombre}</td>
-                    <td class="text-right">${item.precio.toFixed(2)}</td>
-                    <td class="text-center"><span class="tag-tax">{item.porcentajeIVA}%</span></td>
-                    <td class="text-right bold">${(item.cantidad * item.precio * (1 + item.porcentajeIVA/100)).toFixed(2)}</td>
-                    <td><button class="btn-remove" on:click={() => removeItem(i)}>×</button></td>
-                  </tr>
-                {/each}
-                {#if invoice.items.length === 0}
-                    <tr><td colspan="6" class="empty-row">Agrega productos para comenzar la factura</td></tr>
-                {/if}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- SECCIÓN 3: TOTALES Y ACCIONES -->
-        <div class="footer-panel">
-            <div class="notes-area">
-                <label>Notas Adicionales (Opcional)</label>
-                <textarea bind:value={invoice.observacion} placeholder="Ej: Entregar en recepción..."></textarea>
-            </div>
-            <div class="totals-area">
-                <div class="total-row">
-                    <span>Subtotal Sin Impuestos</span>
-                    <span class="mono">${subtotal.toFixed(2)}</span>
-                </div>
-                <div class="total-row">
-                    <span>IVA (15% / 5%)</span>
-                    <span class="mono">${iva.toFixed(2)}</span>
-                </div>
-                <div class="total-row grand-total">
-                    <span>TOTAL A PAGAR</span>
-                    <span class="mono">${total.toFixed(2)}</span>
-                </div>
-                <button class="btn-primary large full-width" on:click={handleEmit} disabled={loading}>
-                    {loading ? 'Procesando...' : '🖋️ Firmar y Emitir Factura'}
-                </button>
-            </div>
-        </div>
-      </div>
-
-    {:else if activeTab === 'products'}
-      <div class="panel" in:fade={{ duration: 100 }}>
-        <h1>Inventario de Productos</h1>
-        <div class="master-detail-layout">
-            <!-- Formulario Lateral (Sticky) -->
-            <div class="sidebar-form card">
-                <h3>{editingProduct.SKU ? 'Editar' : 'Nuevo'} Producto</h3>
-                <div class="form-stack">
-                    <div class="field">
-                        <label>SKU / Código</label>
-                        <input bind:value={editingProduct.SKU} placeholder="COD-001" />
-                    </div>
-                    <div class="field">
-                        <label>Nombre</label>
-                        <input bind:value={editingProduct.Name} placeholder="Nombre del producto" />
-                    </div>
-                    <div class="grid col-2-tight">
-                        <div class="field">
-                            <label>Precio</label>
-                            <input type="number" step="0.01" bind:value={editingProduct.Price} />
+                                </div>
+                            </div>
                         </div>
-                        <div class="field">
-                            <label>Impuesto</label>
-                            <select bind:value={editingProduct.TaxCode} on:change={() => {
+
+                        <!-- Row 2: Recent Activity (Full Width) -->
+                        <div class="card">
+                            <div class="flex-row space-between mb-4">
+                                <h3>⚡ Actividad Reciente</h3>
+                                <button
+                                    class="btn-secondary"
+                                    on:click={() => (activeTab = "history")}
+                                    >Ver Historial Completo</button
+                                >
+                            </div>
+                            <div class="linear-grid">
+                                <div class="linear-header grid-columns-activity" style="grid-template-columns: 100px 140px 1fr 120px;">
+                                    <div class="cell">Estado</div>
+                                    <div class="cell">Secuencial</div>
+                                    <div class="cell">Cliente</div>
+                                    <div class="cell text-right">Total</div>
+                                </div>
+                                <div class="rows-container">
+                                    {#each (historial || []).slice(0, 5) as f}
+                                        <div class="linear-row grid-columns-activity" style="grid-template-columns: 100px 140px 1fr 120px;">
+                                            <div class="cell">
+                                                <span class="badge {f.estado}">{f.estado}</span>
+                                            </div>
+                                            <div class="cell mono text-muted">{f.secuencial}</div>
+                                            <div class="cell">{f.cliente}</div>
+                                            <div class="cell text-right font-medium">${f.total.toFixed(2)}</div>
+                                        </div>
+                                    {/each}
+                                    {#if !historial || historial.length === 0}
+                                        <div class="empty-state-text" style="padding: 40px; text-align: center;">No hay actividad reciente</div>
+                                    {/if}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <style>
+                        /* Local styles for dashboard lists */
+                        .linear-list {
+                            display: flex;
+                            flex-direction: column;
+                        }
+                        .linear-item {
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            padding: 12px 0;
+                            border-bottom: 1px solid var(--border-subtle);
+                        }
+                        .linear-item:last-child {
+                            border-bottom: none;
+                        }
+                        .item-value {
+                            font-weight: 600;
+                            font-family: "SF Mono", monospace;
+                        }
+                        .item-meta {
+                            color: var(--text-secondary);
+                            margin-right: 16px;
+                            font-size: 12px;
+                        }
+                        .status-dot {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 50%;
+                            display: block;
+                        }
+                        .status-dot.AUTORIZADO {
+                            background: var(--status-success);
+                            box-shadow: 0 0 8px rgba(0, 255, 148, 0.4);
+                        }
+                        .status-dot.PENDIENTE {
+                            background: var(--status-warning);
+                        }
+                        .status-dot.ANULADO {
+                            background: var(--status-error);
+                        }
+                    </style>
+                </div>
+            {:else if activeTab === "quotations"}
+                <QuotationPanel
+                    {clients}
+                    {products}
+                    on:convertToInvoice={handleConvertToInvoice}
+                    on:toast={(e) => showToast(e.detail.message, e.detail.type)}
+                />
+            {:else if activeTab === "history"}
+                <div class="panel" in:fade={{ duration: 200 }}>
+                    <div class="header-row">
+                        <h1>Historial de Transacciones</h1>
+                        <div class="header-actions">
+                            <button
+                                class="btn-secondary"
+                                on:click={handleExportExcel}
+                                >📊 Exportar Excel</button
+                            >
+                            <button
+                                class="btn-secondary"
+                                on:click={loadFacturasPage}>🔄 Refrescar</button
+                            >
+                        </div>
+                    </div>
+
+                    <div class="card no-padding">
+                        <div
+                            class="flex-row space-between"
+                            style="padding: 16px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-panel);"
+                        >
+                            <div class="input-group">
+                                <input
+                                    type="date"
+                                    bind:value={dateRange.start}
+                                    aria-label="Desde"
+                                />
+                                <input
+                                    type="date"
+                                    bind:value={dateRange.end}
+                                    aria-label="Hasta"
+                                />
+                            </div>
+                            <div style="width: 320px;">
+                                <input
+                                    bind:value={historialSearch}
+                                    on:input={(e) =>
+                                        handleHistorySearch(e.target.value)}
+                                    placeholder="🔍 Buscar (Nombre, RUC, Secuencial...)"
+                                    aria-label="Buscar factura"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="linear-grid">
+                            <div class="linear-header grid-columns-history">
+                                <div class="cell">Estado</div>
+                                <div class="cell">Secuencial</div>
+                                <div class="cell">Fecha</div>
+                                <div class="cell">Cliente</div>
+                                <div class="cell text-right">Total</div>
+                                <div class="cell text-center">Acciones</div>
+                            </div>
+                            <div class="rows-container">
+                                {#each filteredHistorial as f}
+                                    <div
+                                        class="linear-row grid-columns-history"
+                                    >
+                                        <div class="cell">
+                                            <span class="badge {f.estado}"
+                                                >{f.estado}</span
+                                            >
+                                        </div>
+                                        <div class="cell mono text-secondary">
+                                            {f.secuencial}
+                                        </div>
+                                        <div class="cell mono">{f.fecha}</div>
+                                        <div class="cell" title={f.cliente}>
+                                            {f.cliente}
+                                        </div>
+                                        <div
+                                            class="cell text-right font-medium"
+                                        >
+                                            ${f.total.toFixed(2)}
+                                        </div>
+                                        <div
+                                            class="cell text-center"
+                                            style="gap: 4px; justify-content: center;"
+                                        >
+                                            {#if f.tienePDF}
+                                                <button
+                                                    class="btn-icon-mini"
+                                                    title="Ver PDF"
+                                                    on:click={() =>
+                                                        handleOpenPDF(
+                                                            f.claveAcceso,
+                                                        )}>📄</button
+                                                >
+                                                <button
+                                                    class="btn-icon-mini"
+                                                    title="Email"
+                                                    on:click={() =>
+                                                        handleResendEmail(
+                                                            f.claveAcceso,
+                                                        )}>✉️</button
+                                                >
+                                            {/if}
+                                            <button
+                                                class="btn-icon-mini"
+                                                title="XML"
+                                                on:click={() =>
+                                                    handleOpenXML(
+                                                        f.claveAcceso,
+                                                    )}>🌐</button
+                                            >
+                                            <button
+                                                class="btn-icon-mini"
+                                                title="Carpeta"
+                                                on:click={() =>
+                                                    handleOpenFolder(
+                                                        f.claveAcceso,
+                                                    )}>📂</button
+                                            >
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+                            {#if filteredHistorial.length === 0}
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📭</div>
+                                    <div class="empty-state-text">
+                                        No se encontraron transacciones en este rango de fechas.
+                                    </div>
+                                </div>
+                            {/if}
+                        </div>
+
+                        <style>
+                            .grid-columns-history {
+                                grid-template-columns: 120px 140px 120px 1fr 120px 140px;
+                            }
+                            .font-medium {
+                                font-weight: 500;
+                            }
+                            .text-secondary {
+                                color: var(--text-secondary);
+                            }
+                        </style>
+                        <div
+                            class="flex-row space-between"
+                            style="padding: 1rem;"
+                        >
+                            <button
+                                class="btn-secondary"
+                                disabled={currentPage === 1}
+                                on:click={() => changePage(currentPage - 1)}
+                                >Anterior</button
+                            >
+                            <span class="text-muted"
+                                >Página {currentPage} de {totalPages || 1}</span
+                            >
+                            <button
+                                class="btn-secondary"
+                                disabled={currentPage === totalPages}
+                                on:click={() => changePage(currentPage + 1)}
+                                >Siguiente</button
+                            >
+                        </div>
+                    </div>
+                </div>
+            {:else if activeTab === "invoice"}
+                <div class="panel" in:fade={{ duration: 200 }}>
+                    <div class="header-row">
+                        <h1>Emitir Factura</h1>
+                        <button
+                            class="btn-secondary"
+                            style="border-color: {config.Ambiente === 1
+                                ? 'var(--status-warning)'
+                                : 'var(--status-success)'}"
+                            on:click={async () => {
+                                config.Ambiente = config.Ambiente === 1 ? 2 : 1;
+                                await handleSaveConfig();
+                                showToast(
+                                    `Ambiente: ${config.Ambiente === 1 ? "PRUEBAS" : "PRODUCCIÓN"}`,
+                                    "info",
+                                );
+                            }}
+                        >
+                            {config.Ambiente === 1
+                                ? "🧪 MODO PRUEBAS"
+                                : "🚀 MODO PRODUCCIÓN"}
+                        </button>
+                    </div>
+
+                    <!-- CLIENTE -->
+                    <div class="card">
+                        <div class="header-row" style="margin-bottom: 24px; border-bottom: none; padding-bottom: 0; align-items: flex-start;">
+                            <div style="flex: 1;">
+                                <div class="flex-row space-between" style="margin-bottom: 12px;">
+                                    <h3>👤 Datos del Cliente</h3>
+                                    <div
+                                        class="badge mono"
+                                        style="font-size: 13px; color: var(--accent-mint); border: 1px solid var(--mint-border); background: var(--mint-dim); padding: 6px 12px;"
+                                    >
+                                        DOC: {config.Estab}-{config.PtoEmi}-{invoice.secuencial}
+                                    </div>
+                                </div>
+                                <div style="position: relative;">
+                                    <input
+                                        bind:value={clientSearch}
+                                        on:input={(e) => handleClientSearchInput(e)}
+                                        placeholder="🔍 Buscar o crear nuevo cliente..."
+                                        style="background: var(--bg-hover); border-color: var(--border-medium); height: 44px; font-size: 15px;"
+                                    />
+                                    {#if clientSearch.length > 0}
+                                        <div class="dropdown-menu">
+                                            {#each clients.filter((c) => c.Nombre.toLowerCase().includes(clientSearch.toLowerCase()) || c.ID.includes(clientSearch)) as c}
+                                                <button
+                                                    class="dropdown-item"
+                                                    on:click={() => selectClient(c)}
+                                                    >{c.Nombre} ({c.ID})</button
+                                                >
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="invoice-client-grid">
+                            <div class="field">
+                                <label for="inv-id">Identificación</label>
+                                <input
+                                    id="inv-id"
+                                    bind:value={invoice.clienteID}
+                                    class={invoiceErrors.clienteID ? "invalid" : ""}
+                                    placeholder="RUC / Cédula"
+                                />
+                            </div>
+                            <div class="field">
+                                <label for="inv-name">Razón Social</label>
+                                <input
+                                    id="inv-name"
+                                    bind:value={invoice.clienteNombre}
+                                    class={invoiceErrors.clienteNombre ? "invalid" : ""}
+                                    placeholder="Nombre del Cliente"
+                                />
+                            </div>
+                            <div class="field">
+                                <label for="inv-email">Email</label>
+                                <input
+                                    id="inv-email"
+                                    type="email"
+                                    bind:value={invoice.clienteEmail}
+                                    class={invoiceErrors.clienteEmail ? "invalid" : ""}
+                                    placeholder="cliente@email.com"
+                                />
+                            </div>
+                            <div class="field">
+                                <label for="inv-tel">Teléfono</label>
+                                <input
+                                    id="inv-tel"
+                                    bind:value={invoice.clienteTelefono}
+                                    placeholder="0999999999"
+                                />
+                            </div>
+                            <div class="field" style="grid-column: span 2;">
+                                <label for="inv-addr">Dirección</label>
+                                <input
+                                    id="inv-addr"
+                                    bind:value={invoice.clienteDireccion}
+                                    class={invoiceErrors.clienteDireccion ? "invalid" : ""}
+                                    placeholder="Dirección completa"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PRODUCTOS -->
+                    <div class="card" style="min-height: 400px; display: flex; flex-direction: column;">
+                        <div class="header-row" style="border-bottom: none; padding-bottom: 0; margin-bottom: 16px;">
+                            <h3>📦 Items</h3>
+                        </div>
+
+                        <div class="invoice-product-bar">
+                            <div style="position: relative; grid-column: span 1;">
+                                <input
+                                    bind:value={productSearch}
+                                    placeholder="🔍 Buscar producto..."
+                                    style="width: 100%;"
+                                />
+                                {#if productSearch.length > 0}
+                                    <div class="dropdown-menu">
+                                        {#each products.filter((p) => p.Name.toLowerCase().includes(productSearch.toLowerCase()) || p.SKU.includes(productSearch)) as p}
+                                            <button
+                                                class="dropdown-item"
+                                                on:click={() => selectProduct(p)}
+                                                >{p.Name} - ${p.Price}</button
+                                            >
+                                        {/each}
+                                    </div>
+                                {/if}
+                            </div>
+
+                            <input bind:value={newItem.codigo} placeholder="Código" />
+                            <input bind:value={newItem.nombre} placeholder="Descripción" />
+                            <input type="number" bind:value={newItem.cantidad} min="1" placeholder="Cant" class="text-center" />
+                            <input type="number" step="0.01" bind:value={newItem.precio} placeholder="Precio" class="text-right" />
+                            
+                            <select bind:value={newItem.codigoIVA} on:change={() => {
                                 const map = { "0": 0, "2": 12, "4": 15, "5": 5 };
-                                editingProduct.TaxPercentage = map[editingProduct.TaxCode];
-                            }} class="dark-select">
+                                newItem.porcentajeIVA = map[newItem.codigoIVA];
+                            }}>
                                 <option value="4">15%</option>
                                 <option value="5">5%</option>
                                 <option value="0">0%</option>
                                 <option value="2">12%</option>
                             </select>
+
+                            <button class="btn-neon icon-only" on:click={addItem} title="Agregar">
+                                <span style="font-size: 20px; line-height: 1;">+</span>
+                            </button>
                         </div>
-                    </div>
-                </div>
-                <div class="form-actions">
-                     <button class="btn-primary full-width" on:click={handleSaveProduct}>Guardar</button>
-                     {#if editingProduct.SKU}
-                        <button class="btn-secondary full-width" on:click={() => editingProduct = { SKU: '', Name: '', Price: 0, Stock: 0, TaxCode: "4", TaxPercentage: 15 }}>Cancelar</button>
-                     {/if}
-                </div>
-            </div>
 
-            <!-- Tabla Principal -->
-            <div class="card no-padding scrollable-area">
-                <div class="table-header">
-                    <h3>Lista de Productos</h3>
-                    <span class="badge-pill">{products.length} items</span>
-                </div>
-                <div class="table-body-scroll">
-                    <table class="dense-table">
-                        <thead><tr><th>SKU</th><th>Nombre</th><th class="text-right">Precio</th><th class="text-center">Acciones</th></tr></thead>
-                        <tbody>
-                            {#each products as p}
-                                <tr>
-                                    <td class="mono">{p.SKU}</td>
-                                    <td>{p.Name}</td>
-                                    <td class="text-right bold text-mint">${p.Price.toFixed(2)}</td>
-                                    <td class="text-center">
-                                        <button class="btn-icon-mini" on:click={() => editingProduct = {...p}}>✏️</button>
-                                        <button class="btn-icon-mini danger" on:click={() => handleDeleteProduct(p.SKU)}>🗑️</button>
-                                    </td>
-                                </tr>
-                            {/each}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-      </div>
-
-    {:else if activeTab === 'clients'}
-      <div class="panel" in:fade={{ duration: 100 }}>
-        <h1>Directorio de Clientes</h1>
-        <div class="master-detail-layout">
-            <div class="sidebar-form card">
-                <h3>{editingClient.ID ? 'Editar' : 'Nuevo'} Cliente</h3>
-                <div class="form-stack">
-                    <div class="field">
-                        <label>Identificación (RUC/CI)</label>
-                        <input bind:value={editingClient.ID} placeholder="1712345678" />
-                    </div>
-                    <div class="field">
-                        <label>Nombre / Razón Social</label>
-                        <input bind:value={editingClient.Nombre} />
-                    </div>
-                    <div class="field">
-                        <label>Email</label>
-                        <input bind:value={editingClient.Email} type="email" placeholder="Para facturación" />
-                    </div>
-                    <div class="field">
-                        <label>Dirección</label>
-                        <input bind:value={editingClient.Direccion} />
-                    </div>
-                    <div class="field">
-                        <label>Teléfono</label>
-                        <input bind:value={editingClient.Telefono} />
-                    </div>
-                </div>
-                <div class="form-actions">
-                    <button class="btn-primary full-width" on:click={handleSaveClient}>Guardar</button>
-                    {#if editingClient.ID}
-                        <button class="btn-secondary full-width" on:click={() => editingClient = { ID: '', TipoID: '05', Nombre: '', Direccion: '', Email: '', Telefono: '' }}>Cancelar</button>
-                    {/if}
-                </div>
-            </div>
-
-            <div class="card no-padding scrollable-area">
-                 <div class="table-header">
-                    <h3>Mis Clientes</h3>
-                    <span class="badge-pill">{clients.length} registros</span>
-                </div>
-                <div class="table-body-scroll">
-                    <table class="dense-table">
-                        <thead><tr><th>ID</th><th>Nombre</th><th>Email</th><th class="text-center">Acciones</th></tr></thead>
-                        <tbody>
-                            {#each clients as c}
-                                <tr>
-                                    <td class="mono">{c.ID}</td>
-                                    <td>{c.Nombre}</td>
-                                    <td class="text-small">{c.Email}</td>
-                                    <td class="text-center">
-                                        <button class="btn-icon-mini" on:click={() => editingClient = {...c}}>✏️</button>
-                                        <button class="btn-icon-mini danger" on:click={() => handleDeleteClient(c.ID)}>🗑️</button>
-                                    </td>
-                                </tr>
-                            {/each}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-      </div>
-
-    {:else if activeTab === 'config'}
-      <div class="panel" in:fade={{ duration: 100 }}>
-        <h1>Configuración de Emisor</h1>
-        <div class="config-grid">
-            <!-- SECCIÓN EMPRESA -->
-            <div class="card config-card">
-                <h3>🏢 Datos de Empresa</h3>
-                <div class="form-stack">
-                    <div class="field">
-                        <label>RUC</label>
-                        <input bind:value={config.RUC} />
-                    </div>
-                    <div class="field">
-                        <label>Razón Social</label>
-                        <input bind:value={config.RazonSocial} />
-                    </div>
-                    <div class="field">
-                        <label>Nombre Comercial</label>
-                        <input bind:value={config.NombreComercial} placeholder="Opcional" />
-                    </div>
-                    <div class="field">
-                        <label>Dirección Matriz</label>
-                        <input bind:value={config.Direccion} />
-                    </div>
-                    <div class="grid col-2-tight">
-                        <div class="field">
-                            <label>Estab (001)</label>
-                            <input bind:value={config.Estab} maxlength="3" class="text-center" />
-                        </div>
-                        <div class="field">
-                            <label>PtoEmi (001)</label>
-                            <input bind:value={config.PtoEmi} maxlength="3" class="text-center" />
-                        </div>
-                    </div>
-                    <div class="field checkbox-field">
-                        <label><input type="checkbox" bind:checked={config.Obligado} /> Obligado a Contabilidad</label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- SECCIÓN FIRMA Y LOGO -->
-            <div class="card config-card">
-                <h3>🔐 Firma y Marca</h3>
-                <div class="form-stack">
-                    <div class="field">
-                        <label>Logo de Empresa</label>
-                        <div class="logo-preview-container">
-                            {#if config.LogoPath}
-                                <img src="{config.LogoPath.startsWith('/') ? 'file://' + config.LogoPath : config.LogoPath}" alt="Logo" class="logo-preview" />
-                            {:else}
-                                <div class="logo-placeholder">Sin Logo</div>
-                            {/if}
-                            <div class="logo-actions">
-                                <button class="btn-secondary compact" on:click={async () => {
-                                    const path = await SelectAndSaveLogo();
-                                    if (path && !path.startsWith("Error")) config.LogoPath = path;
-                                    else if(path) showToast(path, 'error');
-                                }}>📷 Subir Logo</button>
-                                <small class="hint">Se ajustará automáticamente (Max 400px)</small>
+                        <div class="linear-grid mt-4" style="flex: 1;">
+                            <div class="linear-header grid-columns-invoice">
+                                <div class="cell text-center">Cant</div>
+                                <div class="cell">Descripción</div>
+                                <div class="cell text-right">P. Unit</div>
+                                <div class="cell text-center">IVA</div>
+                                <div class="cell text-right">Total</div>
+                                <div class="cell"></div>
                             </div>
+                            <div class="rows-container">
+                                {#each invoice.items as item, i (item)}
+                                    <div
+                                        class="linear-row grid-columns-invoice"
+                                        animate:flip={{ duration: 300 }}
+                                    >
+                                        <div class="cell text-center">
+                                            {item.cantidad}
+                                        </div>
+                                        <div class="cell">{item.nombre}</div>
+                                        <div class="cell text-right">
+                                            ${item.precio.toFixed(2)}
+                                        </div>
+                                        <div class="cell text-center">
+                                            <span class="badge"
+                                                >{item.porcentajeIVA}%</span
+                                            >
+                                        </div>
+                                        <div
+                                            class="cell text-right font-medium"
+                                        >
+                                            ${(
+                                                item.cantidad *
+                                                item.precio *
+                                                (1 + item.porcentajeIVA / 100)
+                                            ).toFixed(2)}
+                                        </div>
+                                        <div class="cell text-center">
+                                            <button
+                                                class="btn-icon-mini danger"
+                                                on:click={() => removeItem(i)}
+                                                >×</button
+                                            >
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+                            {#if invoice.items.length === 0}
+                                <div
+                                    style="padding: 40px; text-align: center; color: var(--text-secondary); font-style: italic;"
+                                >
+                                    Agrega productos para comenzar la factura
+                                </div>
+                            {/if}
                         </div>
                     </div>
 
-                    <div class="field">
-                        <label>Archivo .p12</label>
-                        <div class="input-group">
-                            <input bind:value={config.P12Path} readonly class="text-small" />
-                            <button class="btn-secondary compact" on:click={handleSelectCert}>📂</button>
+                    <!-- FOOTER -->
+                    <div class="footer-panel">
+                        <div class="notes-area" style="flex:1">
+                            <label for="inv-notes">Notas Adicionales</label>
+                            <textarea
+                                id="inv-notes"
+                                bind:value={invoice.observacion}
+                                placeholder="Observaciones..."
+                                style="height: 120px; resize: none;"
+                            ></textarea>
                         </div>
-                    </div>
-                    <div class="field">
-                        <label>Contraseña Firma</label>
-                        <div class="input-group">
-                            {#if showPassword}
-                                <input type="text" bind:value={config.P12Password} />
-                            {:else}
-                                <input type="password" bind:value={config.P12Password} />
-                            {/if}
-                            <button class="btn-secondary compact" on:click={() => showPassword = !showPassword}>
-                                {showPassword ? '🙈' : '👁️'}
+                        <div class="totals-area card">
+                            <div class="total-row text-secondary">
+                                <span>Subtotal</span><span
+                                    >${subtotal.toFixed(2)}</span
+                                >
+                            </div>
+                            <div class="total-row text-secondary">
+                                <span>IVA</span><span>${iva.toFixed(2)}</span>
+                            </div>
+                            <div
+                                class="total-row grand-total flex-row space-between"
+                                style="border-top: 1px solid var(--border-subtle); margin-top: 16px; padding-top: 16px;"
+                            >
+                                <span style="font-size: 18px; font-weight: 700;"
+                                    >TOTAL</span
+                                >
+                                <span
+                                    style="font-size: 18px; font-weight: 700; color: var(--accent-mint);"
+                                    >${total.toFixed(2)}</span
+                                >
+                            </div>
+                            <button
+                                class="btn-primary full-width"
+                                style="margin-top: 24px; width: 100%; height: 48px; font-size: 14px;"
+                                on:click={handleEmit}
+                                disabled={loading}
+                            >
+                                {loading
+                                    ? "Procesando..."
+                                    : "🖋️ Firmar y Emitir"}
                             </button>
                         </div>
                     </div>
-                    <div class="field mt-1">
-                        <label>Carpeta de Guardado (XML/PDF)</label>
-                        <div class="input-group">
-                            <input bind:value={config.StoragePath} readonly class="text-small" placeholder="Por defecto" />
-                            <button class="btn-secondary compact" on:click={handleSelectStorage}>📂</button>
+
+                    <style>
+                        .grid-columns-invoice {
+                            grid-template-columns: 80px 1fr 100px 80px 120px 60px;
+                        }
+                        .add-product-bar-linear {
+                            display: flex;
+                            gap: 12px;
+                            align-items: center;
+                            background: var(--bg-hover);
+                            padding: 16px;
+                            border-radius: var(--radius-sm);
+                            border: 1px solid var(--border-subtle);
+                            margin-top: 16px;
+                        }
+                        .dropdown-menu {
+                            position: absolute;
+                            top: 100%;
+                            left: 0;
+                            right: 0;
+                            background: var(--bg-panel);
+                            border: 1px solid var(--accent-mint);
+                            z-index: 50;
+                            max-height: 200px;
+                            overflow-y: auto;
+                            border-radius: 0 0 6px 6px;
+                            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+                        }
+                        .dropdown-item {
+                            width: 100%;
+                            padding: 12px;
+                            background: transparent;
+                            border: none;
+                            border-bottom: 1px solid var(--border-subtle);
+                            color: var(--text-primary);
+                            text-align: left;
+                            cursor: pointer;
+                        }
+                        .dropdown-item:hover {
+                            background: rgba(0, 255, 148, 0.1);
+                            color: var(--accent-mint);
+                        }
+                        .total-row {
+                            display: flex;
+                            justify-content: space-between;
+                            margin-bottom: 8px;
+                            font-size: 14px;
+                        }
+                    </style>
+                </div>
+            {:else if activeTab === "products"}
+                <div class="panel full-height" in:fade={{ duration: 200 }}>
+                    <div class="header-row">
+                        <h1>Inventario de Productos</h1>
+                    </div>
+
+                    <div class="master-detail-layout">
+                        <!-- FORMULARIO PRODUCTO -->
+                        <div class="sidebar-form card">
+                            <h3>
+                                {editingProduct.SKU ? "Editar" : "Nuevo"} Producto
+                            </h3>
+                            <div class="field">
+                                <label for="p-sku">SKU / Código</label>
+                                <input
+                                    id="p-sku"
+                                    bind:value={editingProduct.SKU}
+                                    placeholder="COD-001"
+                                    style="font-family: monospace;"
+                                />
+                            </div>
+                            <div class="field">
+                                <label for="p-name">Nombre</label>
+                                <input
+                                    id="p-name"
+                                    bind:value={editingProduct.Name}
+                                    placeholder="Nombre del producto"
+                                />
+                            </div>
+                            <div class="grid col-2-tight" style="gap: 12px; display: grid; grid-template-columns: 1fr 1fr;">
+                                <div class="field">
+                                    <label for="p-price">Precio</label>
+                                    <input
+                                        id="p-price"
+                                        type="number"
+                                        step="0.01"
+                                        bind:value={editingProduct.Price}
+                                    />
+                                </div>
+                                <div class="field">
+                                    <label for="p-tax">Impuesto</label>
+                                    <select
+                                        id="p-tax"
+                                        bind:value={editingProduct.TaxCode}
+                                        on:change={() => {
+                                            const map = { "0": 0, "2": 12, "4": 15, "5": 5 };
+                                            editingProduct.TaxPercentage = map[editingProduct.TaxCode];
+                                        }}
+                                    >
+                                        <option value="4">15%</option>
+                                        <option value="5">5%</option>
+                                        <option value="0">0%</option>
+                                        <option value="2">12%</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex-row mt-4">
+                                <button
+                                    class="btn-primary full-width"
+                                    style="flex:1"
+                                    on:click={handleSaveProduct}>Guardar</button
+                                >
+                                {#if editingProduct.SKU}
+                                    <button
+                                        class="btn-secondary"
+                                        on:click={() =>
+                                            (editingProduct = {
+                                                SKU: "",
+                                                Name: "",
+                                                Price: 0,
+                                                Stock: 0,
+                                                TaxCode: "4",
+                                                TaxPercentage: 15,
+                                            })}>Cancelar</button
+                                    >
+                                {/if}
+                            </div>
                         </div>
-                        <small class="hint">Se crearán carpetas por Año/Mes automáticamente.</small>
+
+                        <!-- LISTA PRODUCTOS -->
+                        <div class="card no-padding" style="display: flex; flex-direction: column;">
+                            <div class="linear-grid" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                                <div class="linear-header grid-columns-products">
+                                    <div class="cell">SKU</div>
+                                    <div class="cell">Nombre</div>
+                                    <div class="cell text-right">Precio</div>
+                                    <div class="cell text-center">Acciones</div>
+                                </div>
+                                <div class="rows-container" style="overflow-y: auto; flex: 1;">
+                                    {#each products as p}
+                                        <div class="linear-row grid-columns-products">
+                                            <div class="cell mono text-secondary">{p.SKU}</div>
+                                            <div class="cell">{p.Name}</div>
+                                            <div class="cell text-right font-medium" style="color: var(--accent-mint);">
+                                                ${p.Price.toFixed(2)}
+                                            </div>
+                                            <div class="cell text-center" style="gap: 4px; justify-content: center;">
+                                                <button class="btn-icon-mini" on:click={() => (editingProduct = { ...p })}>✏️</button>
+                                                <button class="btn-icon-mini danger" on:click={() => handleDeleteProduct(p.SKU)}>🗑️</button>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                                {#if products.length === 0}
+                                    <div class="empty-state">
+                                        <div class="empty-state-icon">📦</div>
+                                        <div class="empty-state-text">No hay productos en inventario.</div>
+                                    </div>
+                                {/if}
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
+            {:else if activeTab === "clients"}
+                <div class="panel full-height" in:fade={{ duration: 200 }}>
+                    <div class="header-row">
+                        <h1>Directorio de Clientes</h1>
+                    </div>
 
-            <!-- SECCIÓN CORREO (SMTP LOCAL) -->
-            <div class="card config-card">
-                <h3>📧 Correo (SMTP)</h3>
-                <div class="form-stack">
-                    <div class="smtp-presets">
-                        <button class="preset-btn gmail" on:click={() => { config.SMTPHost = 'smtp.gmail.com'; config.SMTPPort = 587; }}>Gmail</button>
-                        <button class="preset-btn outlook" on:click={() => { config.SMTPHost = 'smtp.office365.com'; config.SMTPPort = 587; }}>Outlook</button>
-                    </div>
-                    
-                    <div class="field">
-                        <label>Servidor SMTP</label>
-                        <input bind:value={config.SMTPHost} placeholder="smtp.gmail.com" />
-                    </div>
-                    <div class="grid col-2-tight">
-                        <div class="field">
-                            <label>Puerto</label>
-                            <input type="number" bind:value={config.SMTPPort} placeholder="587" />
+                    <div class="master-detail-layout">
+                        <!-- FORMULARIO CLIENTE -->
+                        <div class="sidebar-form card" style="display: flex; flex-direction: column; height: 100%; padding: 24px;">
+                            <div class="sidebar-content">
+                                <h3>
+                                    {editingClient.ID ? "Editar" : "Nuevo"} Cliente
+                                </h3>
+                                
+                                <div class="field">
+                                    <label for="c-id">Identificación</label>
+                                    <input
+                                        id="c-id"
+                                        bind:value={editingClient.ID}
+                                        placeholder="RUC / Cédula"
+                                    />
+                                </div>
+
+                                <div class="field">
+                                    <label for="c-name">Razón Social</label>
+                                    <input
+                                        id="c-name"
+                                        bind:value={editingClient.Nombre}
+                                        placeholder="Nombre completo"
+                                    />
+                                </div>
+
+                                <div class="grid col-2-tight" style="gap: 12px; display: grid; grid-template-columns: 1fr 1fr;">
+                                    <div class="field">
+                                        <label for="c-email">Email</label>
+                                        <input
+                                            id="c-email"
+                                            bind:value={editingClient.Email}
+                                            type="email"
+                                            placeholder="correo@ejemplo.com"
+                                        />
+                                    </div>
+                                    <div class="field">
+                                        <label for="c-tel">Teléfono</label>
+                                        <input
+                                            id="c-tel"
+                                            bind:value={editingClient.Telefono}
+                                            placeholder="Teléfono"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <label for="c-addr">Dirección</label>
+                                    <input
+                                        id="c-addr"
+                                        bind:value={editingClient.Direccion}
+                                        placeholder="Dirección"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="sidebar-footer" style="margin-top: 16px; border-top: 1px solid var(--border-subtle); padding-top: 16px;">
+                                <div class="flex-row">
+                                    <button
+                                        class="btn-primary full-width"
+                                        style="flex:1"
+                                        on:click={handleSaveClient}>Guardar</button
+                                    >
+                                    {#if editingClient.ID}
+                                        <button
+                                            class="btn-secondary"
+                                            on:click={() =>
+                                                (editingClient = {
+                                                    ID: "",
+                                                    TipoID: "05",
+                                                    Nombre: "",
+                                                    Direccion: "",
+                                                    Email: "",
+                                                    Telefono: "",
+                                                })}>Cancelar</button
+                                        >
+                                    {/if}
+                                </div>
+                            </div>
                         </div>
-                        <div class="field">
-                            <label>Usuario</label>
-                            <input bind:value={config.SMTPUser} placeholder="tu@email.com" />
+
+                        <!-- LISTA CLIENTES -->
+                        <div class="card no-padding" style="display: flex; flex-direction: column;">
+                            <div class="linear-grid" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                                <div class="linear-header grid-columns-clients">
+                                    <div class="cell">ID</div>
+                                    <div class="cell">Nombre</div>
+                                    <div class="cell">Email</div>
+                                    <div class="cell text-center">Acciones</div>
+                                </div>
+                                <div class="rows-container" style="overflow-y: auto; flex: 1;">
+                                    {#each clients as c}
+                                        <div class="linear-row grid-columns-clients">
+                                            <div class="cell mono text-secondary">{c.ID}</div>
+                                            <div class="cell">{c.Nombre}</div>
+                                            <div class="cell text-secondary" style="font-size: 12px;">{c.Email}</div>
+                                            <div class="cell text-center" style="gap: 4px; justify-content: center;">
+                                                <button class="btn-icon-mini" on:click={() => (editingClient = { ...c })}>✏️</button>
+                                                <button class="btn-icon-mini danger" on:click={() => handleDeleteClient(c.ID)}>🗑️</button>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                                {#if clients.length === 0}
+                                    <div class="empty-state">
+                                        <div class="empty-state-icon">👥</div>
+                                        <div class="empty-state-text">
+                                            No hay clientes registrados. Agrega uno nuevo desde el formulario.
+                                        </div>
+                                    </div>
+                                {/if}
+                            </div>
                         </div>
                     </div>
-                    <div class="field">
-                        <label>Contraseña / App Password</label>
-                        <input type="password" bind:value={config.SMTPPassword} placeholder="••••••••" />
-                        <small class="hint">Usa una "Contraseña de Aplicación" si usas Gmail/Outlook.</small>
+                </div>
+            {:else if activeTab === "config"}
+                <div class="panel" in:fade={{ duration: 200 }}>
+                    <h1>Configuración</h1>
+                    <div class="config-grid">
+                        <div class="card">
+                            <h3>🏢 Datos de Empresa</h3>
+                            <div class="field">
+                                <label for="cfg-ruc">RUC</label><input id="cfg-ruc"
+                                    bind:value={config.RUC}
+                                />
+                            </div>
+                            <div class="field">
+                                <label for="cfg-razon">Razón Social</label><input id="cfg-razon"
+                                    bind:value={config.RazonSocial}
+                                />
+                            </div>
+                            <div class="field">
+                                <label for="cfg-nombre">Nombre Comercial</label><input id="cfg-nombre"
+                                    bind:value={config.NombreComercial}
+                                />
+                            </div>
+                            <div class="field">
+                                <label for="cfg-dir">Dirección</label><input id="cfg-dir"
+                                    bind:value={config.Direccion}
+                                />
+                            </div>
+                            <div class="grid col-2-tight">
+                                <div class="field">
+                                    <label for="cfg-estab">Estab (001)</label><input id="cfg-estab"
+                                        bind:value={config.Estab}
+                                        maxlength="3"
+                                        class="text-center"
+                                    />
+                                </div>
+                                <div class="field">
+                                    <label for="cfg-ptoemi">PtoEmi (001)</label><input id="cfg-ptoemi"
+                                        bind:value={config.PtoEmi}
+                                        maxlength="3"
+                                        class="text-center"
+                                    />
+                                </div>
+                            </div>
+                            <div class="field checkbox-field mt-1">
+                                <label for="cfg-obligado"
+                                    style="display: flex; align-items: center; gap: 8px; cursor: pointer;"
+                                >
+                                    <input id="cfg-obligado"
+                                        type="checkbox"
+                                        bind:checked={config.Obligado}
+                                        style="width: auto;"
+                                    />
+                                    Obligado a Contabilidad
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>🔐 Firma y Marca</h3>
+                            <div class="field">
+                                <label for="cfg-logo">Logo</label>
+                                <div id="cfg-logo"
+                                    class="flex-row"
+                                    style="background: var(--bg-surface-hover); padding: 10px; border-radius: 8px;"
+                                >
+                                    {#if config.LogoPath}
+                                        <img
+                                            src={config.LogoPath.startsWith("/")
+                                                ? "file://" + config.LogoPath
+                                                : config.LogoPath}
+                                            alt="Logo"
+                                            style="width: 50px; height: 50px; object-fit: contain; background: white; border-radius: 4px;"
+                                        />
+                                    {/if}
+                                    <button
+                                        class="btn-secondary"
+                                        on:click={async () => {
+                                            const path =
+                                                await SelectAndSaveLogo();
+                                            if (
+                                                path &&
+                                                !path.startsWith("Error")
+                                            )
+                                                config.LogoPath = path;
+                                        }}>📷 Subir Logo</button
+                                    >
+                                </div>
+                            </div>
+
+                            <div class="field">
+                                <label for="cfg-p12">Archivo .p12</label>
+                                <div class="input-group">
+                                    <input id="cfg-p12"
+                                        bind:value={config.P12Path}
+                                        readonly
+                                    />
+                                    <button
+                                        class="btn-secondary"
+                                        on:click={handleSelectCert}>📂</button
+                                    >
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label for="cfg-pass">Contraseña Firma</label>
+                                <div class="input-group">
+                                    {#if showPassword}
+                                        <input id="cfg-pass"
+                                            type="text"
+                                            bind:value={config.P12Password}
+                                        />
+                                    {:else}
+                                        <input id="cfg-pass"
+                                            type="password"
+                                            bind:value={config.P12Password}
+                                        />
+                                    {/if}
+                                    <button
+                                        class="btn-secondary"
+                                        on:click={() =>
+                                            (showPassword = !showPassword)}
+                                        >👁</button
+                                    >
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>📧 Correo (SMTP)</h3>
+                            <div class="flex-row mb-1" style="gap: 12px;">
+                                <button
+                                    class="btn-secondary"
+                                    on:click={() => {
+                                        config.SMTPHost = "smtp.gmail.com";
+                                        config.SMTPPort = 587;
+                                    }}>Gmail</button
+                                >
+                                <button
+                                    class="btn-secondary"
+                                    on:click={() => {
+                                        config.SMTPHost = "smtp.office365.com";
+                                        config.SMTPPort = 587;
+                                    }}>Outlook</button
+                                >
+                            </div>
+                            <div class="field">
+                                <label for="smtp-host">Host</label><input id="smtp-host"
+                                    bind:value={config.SMTPHost}
+                                />
+                            </div>
+                            <div class="grid col-2-tight">
+                                <div class="field">
+                                    <label for="smtp-port">Puerto</label><input id="smtp-port"
+                                        type="number"
+                                        bind:value={config.SMTPPort}
+                                    />
+                                </div>
+                                <div class="field">
+                                    <label for="smtp-user">Usuario</label><input id="smtp-user"
+                                        bind:value={config.SMTPUser}
+                                    />
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label for="smtp-pass">Contraseña</label><input id="smtp-pass"
+                                    type="password"
+                                    bind:value={config.SMTPPassword}
+                                />
+                            </div>
+                            <button
+                                class="btn-secondary mt-1 full-width"
+                                on:click={handleTestSMTP}>Test Conexión</button
+                            >
+                        </div>
                     </div>
-                    <div class="form-actions mt-1">
-                        <button class="btn-secondary full-width" on:click={handleTestSMTP} disabled={loading}>
-                            {loading ? 'Probando...' : '🧪 Probar Conexión'}
+
+                    <div
+                        class="flex-row"
+                        style="justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-subtle);"
+                    >
+                        <button
+                            class="btn-primary"
+                            on:click={handleSaveConfig}
+                            disabled={loading}
+                        >
+                            Guardar Configuración
                         </button>
                     </div>
                 </div>
-            </div>
-        </div>
-        
-        <div class="actions-right">
-            <button class="btn-primary large" on:click={handleSaveConfig} disabled={loading}>
-              Guardar Toda la Configuración
-            </button>
-        </div>
-      </div>
-
-    {:else if activeTab === 'sync'}
-      <div class="panel full-height" in:fade={{ duration: 100 }}>
-        <div class="header-row">
-            <h1>Panel de Actividad y Auditoría</h1>
-            <div class="header-actions">
-                <button class="btn-secondary" on:click={refreshSyncLogs}>🔄 Refrescar Todo</button>
-                <button class="btn-primary" on:click={handleSyncNow}>🚀 Sync SRI Manual</button>
-            </div>
-        </div>
-
-        <div class="activity-grid">
-            <!-- Sección 1: Historial de Correos -->
-            <div class="card no-padding">
-                <div class="table-header">
-                    <h3>✉️ Historial de Correos Enviados</h3>
-                    <span class="badge-pill">{mailLogs.length} registros</span>
-                </div>
-                <div class="table-body-scroll" style="max-height: 300px;">
-                    <table class="dense-table">
-                        <thead>
-                            <tr>
-                                <th>Estado</th>
-                                <th>Fecha</th>
-                                <th>Destinatario</th>
-                                <th>Mensaje</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {#each mailLogs as ml}
-                                <tr>
-                                    <td><span class="badge {ml.estado}">{ml.estado}</span></td>
-                                    <td class="text-small mono">{ml.fecha}</td>
-                                    <td>{ml.email}</td>
-                                    <td class="text-small italic">{ml.mensaje}</td>
-                                </tr>
-                            {/each}
-                            {#if mailLogs.length === 0}
-                                <tr><td colspan="4" class="empty-row">No hay envíos registrados aún</td></tr>
-                            {/if}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Sección 2: Logs del Sistema -->
-            <div class="sync-container" style="margin-top: 1rem;">
-                <div class="log-list card scrollable">
-                    <h3>⚙️ Eventos de Sincronización</h3>
-                    {#if syncLogs.length === 0}<div class="empty-state">Sin registros</div>
-                    {:else}
-                        {#each syncLogs as log (log.id)}
-                            <!-- svelte-ignore a11y-click-events-have-key-events -->
-                            <div class="log-item {selectedLog === log ? 'active' : ''}" on:click={() => selectedLog = log}>
-                                <div class="log-header"><span class="timestamp">{log.timestamp}</span><span class="badge {log.status}">{log.status}</span></div>
-                                <div class="log-title">{log.action}</div><div class="log-detail">{log.detail}</div>
-                            </div>
-                        {/each}
-                    {/if}
-                </div>
-                <div class="log-detail-panel card">
-                    {#if selectedLog}
-                        <h3>Detalle Técnico</h3>
-                        <div class="detail-grid">
-                            <div class="detail-section"><label>Petición</label><div class="code-block"><pre>{formatJSON(selectedLog.request)}</pre></div></div>
-                            <div class="detail-section"><label>Respuesta</label><div class="code-block"><pre>{formatJSON(selectedLog.response)}</pre></div></div>
+            {:else if activeTab === "sync"}
+                <div class="panel full-height" in:fade={{ duration: 200 }}>
+                    <div class="header-row">
+                        <h1>Auditoría y Sync</h1>
+                        <div class="header-actions">
+                            <button
+                                class="btn-secondary"
+                                on:click={refreshSyncLogs}>Refrescar</button
+                            >
+                            <button class="btn-primary" on:click={handleSyncNow}
+                                >Sincronizar SRI</button
+                            >
                         </div>
-                    {:else}<div class="empty-selection"><p>Selecciona un evento de la lista para ver el JSON</p></div>{/if}
+                    </div>
+
+                    <div
+                        class="activity-grid"
+                        style="display: grid; grid-template-rows: auto 1fr; gap: 24px; height: calc(100vh - 200px);"
+                    >
+                        <!-- MAIL LOGS -->
+                        <div
+                            class="card no-padding"
+                            style="height: 300px; display: flex; flex-direction: column;"
+                        >
+                            <div
+                                class="linear-grid"
+                                style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"
+                            >
+                                <div class="linear-header grid-columns-mail">
+                                    <div class="cell">Estado</div>
+                                    <div class="cell">Fecha</div>
+                                    <div class="cell">Destinatario</div>
+                                    <div class="cell">Mensaje</div>
+                                </div>
+                                <div
+                                    class="rows-container"
+                                    style="overflow-y: auto; flex: 1;"
+                                >
+                                    {#each mailLogs as ml}
+                                        <div
+                                            class="linear-row grid-columns-mail"
+                                        >
+                                            <div class="cell">
+                                                <span class="badge {ml.estado}"
+                                                    >{ml.estado}</span
+                                                >
+                                            </div>
+                                            <div
+                                                class="cell mono text-secondary"
+                                            >
+                                                {ml.fecha}
+                                            </div>
+                                            <div class="cell">{ml.email}</div>
+                                            <div
+                                                class="cell text-muted"
+                                                style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                                            >
+                                                {ml.mensaje}
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SYNC LOGS -->
+                        <div
+                            class="sync-container"
+                            style="display: grid; grid-template-columns: 350px 1fr; gap: 24px; height: 100%; overflow: hidden;"
+                        >
+                            <div
+                                class="card no-padding scrollable"
+                                style="display: flex; flex-direction: column;"
+                            >
+                                <div
+                                    class="linear-header"
+                                    style="padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface);"
+                                >
+                                    <h3 style="margin: 0; font-size: 14px;">
+                                        Eventos de Sincronización
+                                    </h3>
+                                </div>
+                                <div style="flex: 1; overflow-y: auto;">
+                                    {#each syncLogs as log}
+                                        <div
+                                            role="button"
+                                            tabindex="0"
+                                            class="log-item {selectedLog === log
+                                                ? 'active'
+                                                : ''}"
+                                            on:click={() => (selectedLog = log)}
+                                            on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (selectedLog = log)}
+                                        >
+                                            <div class="flex-row space-between">
+                                                <span
+                                                    class="mono text-muted"
+                                                    style="font-size: 11px;"
+                                                    >{log.timestamp}</span
+                                                >
+                                                <span
+                                                    class="badge {log.status}"
+                                                    style="transform: scale(0.9);"
+                                                    >{log.status}</span
+                                                >
+                                            </div>
+                                            <div
+                                                style="font-weight: 500; font-size: 13px; margin-top: 4px; color: var(--text-primary);"
+                                            >
+                                                {log.action}
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+
+                            <div
+                                class="card"
+                                style="overflow: hidden; display: flex; flex-direction: column;"
+                            >
+                                {#if selectedLog}
+                                    <h3 style="margin-bottom: 16px;">
+                                        Detalle del Evento
+                                    </h3>
+                                    <div style="flex: 1; overflow-y: auto;">
+                                        <div
+                                            style="margin-bottom: 8px; font-size: 12px; color: var(--text-secondary);"
+                                        >
+                                            Request Payload
+                                        </div>
+                                        <pre class="code-block">{formatJSON(
+                                                selectedLog.request,
+                                            )}</pre>
+
+                                        <div
+                                            style="margin-bottom: 8px; margin-top: 16px; font-size: 12px; color: var(--text-secondary);"
+                                        >
+                                            Response Payload
+                                        </div>
+                                        <pre class="code-block">{formatJSON(
+                                                selectedLog.response,
+                                            )}</pre>
+                                    </div>
+                                {:else}
+                                    <div class="empty-state">
+                                        Selecciona un log para ver detalles
+                                    </div>
+                                {/if}
+                            </div>
+                        </div>
+                    </div>
+
+                    <style>
+                        .grid-columns-mail {
+                            grid-template-columns: 100px 160px 200px 1fr;
+                        }
+                        .log-item {
+                            padding: 12px 16px;
+                            border-bottom: 1px solid var(--border-subtle);
+                            cursor: pointer;
+                            transition: background 0.2s;
+                        }
+                        .log-item:hover {
+                            background: var(--bg-hover);
+                        }
+                        .log-item.active {
+                            background: rgba(0, 255, 148, 0.05);
+                            border-left: 3px solid var(--accent-mint);
+                        }
+                        .code-block {
+                            font-family: "SF Mono", monospace;
+                            font-size: 11px;
+                            background: var(--bg-hover);
+                            padding: 12px;
+                            border-radius: 6px;
+                            color: var(--text-primary);
+                            border: 1px solid var(--border-subtle);
+                            white-space: pre-wrap;
+                        }
+                    </style>
+                </div>
+            {/if}
+
+            {#if activeTab === "backups"}
+                <div class="panel" in:fade={{ duration: 200 }}>
+                    <div class="header-row">
+                        <h1>Copias de Seguridad</h1>
+                        <button
+                            class="btn-primary"
+                            on:click={handleCreateBackup}
+                            disabled={loading}>Crear Respaldo</button
+                        >
+                    </div>
+
+                    <div class="card mb-4">
+                        <h3>Ruta de Almacenamiento</h3>
+                        <div class="flex-row" style="gap: 12px;">
+                            <input
+                                value={config.StoragePath
+                                    ? config.StoragePath + "/Backups"
+                                    : "Default"}
+                                readonly
+                                style="flex: 1; font-family: monospace; background: var(--bg-hover);"
+                            />
+                            <button
+                                class="btn-secondary"
+                                on:click={handleSelectStorage}
+                                >📂 Cambiar</button
+                            >
+                        </div>
+                    </div>
+
+                    <div class="card no-padding">
+                        <div class="linear-grid" style="min-height: 300px;">
+                            <div class="linear-header grid-columns-backups">
+                                <div class="cell">Archivo</div>
+                                <div class="cell">Fecha</div>
+                                <div class="cell">Tamaño</div>
+                                <div class="cell">Ruta Completa</div>
+                            </div>
+                            <div class="rows-container">
+                                {#each backups as b}
+                                    <div
+                                        class="linear-row grid-columns-backups"
+                                    >
+                                        <div
+                                            class="cell font-medium"
+                                            style="color: var(--accent-mint);"
+                                        >
+                                            {b.name}
+                                        </div>
+                                        <div class="cell mono text-secondary">
+                                            {b.date}
+                                        </div>
+                                        <div class="cell">{b.size}</div>
+                                        <div
+                                            class="cell text-muted"
+                                            style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                                            title={b.path}
+                                        >
+                                            {b.path}
+                                        </div>
+                                    </div>
+                                {/each}
+                                {#if backups.length === 0}
+                                    <div class="empty-state">
+                                        No hay respaldos disponibles
+                                    </div>
+                                {/if}
+                            </div>
+                        </div>
+                    </div>
+
+                    <style>
+                        .grid-columns-backups {
+                            grid-template-columns: 200px 150px 100px 1fr;
+                        }
+                    </style>
+                </div>
+            {/if}
+        </section>
+
+        {#if confirmationModal.show}
+            <div class="modal-overlay" transition:fade>
+                <div class="modal-card" in:fly={{ y: 20 }}>
+                    <h3>{confirmationModal.title}</h3>
+                    <p style="color: var(--text-muted); margin: 1rem 0;">
+                        {confirmationModal.message}
+                    </p>
+                    <div class="modal-actions">
+                        <button
+                            class="btn-secondary"
+                            on:click={() => (confirmationModal.show = false)}
+                            >Cancelar</button
+                        ><button class="btn-danger" on:click={handleConfirm}
+                            >Confirmar</button
+                        >
+                    </div>
                 </div>
             </div>
-        </div>
-      </div>
+        {/if}
+
+        <Wizard show={showWizard} on:complete={onWizardComplete} />
     {/if}
 
-    {#if activeTab === 'backups'}
-      <div class="panel full-height" in:fade={{ duration: 100 }}>
-        <div class="header-row">
-            <h1>Copias de Seguridad</h1>
-            <button class="btn-primary" on:click={handleCreateBackup} disabled={loading}>
-                💾 Crear Respaldo Ahora
-            </button>
-        </div>
-
-        <div class="card config-card mb-1">
-            <h3>📂 Configuración de Almacenamiento</h3>
-            <div class="field">
-                <label>Ruta de Respaldos</label>
-                <div class="input-group">
-                    <input value={config.StoragePath ? config.StoragePath + '/Backups' : 'Carpeta de Usuario/Backups'} readonly />
-                    <button class="btn-secondary" on:click={handleSelectStorage} title="Cambiar Ruta Base">📂</button>
-                </div>
-                <small class="hint">Los respaldos se guardan en una subcarpeta "Backups" dentro de tu ruta de almacenamiento principal.</small>
+    <div class="toast-container">
+        {#each toasts as t (t.id)}
+            <div
+                class="toast-card {t.type}"
+                transition:fly={{ x: 20, duration: 300 }}
+                animate:flip={{ duration: 300 }}
+            >
+                {t.message}
             </div>
-        </div>
-
-        <div class="card no-padding">
-            <div class="table-header">
-                <h3>Historial de Respaldos</h3>
-                <span class="badge-pill">{backups.length} archivos</span>
-            </div>
-            <div class="table-body-scroll">
-                <table class="dense-table">
-                    <thead><tr><th>Archivo</th><th>Fecha</th><th>Tamaño</th><th>Ruta</th></tr></thead>
-                    <tbody>
-                        {#each backups as b}
-                            <tr>
-                                <td class="bold">{b.name}</td>
-                                <td class="mono text-small">{b.date}</td>
-                                <td>{b.size}</td>
-                                <td class="text-small italic" style="max-width: 200px; overflow:hidden; text-overflow:ellipsis;">{b.path}</td>
-                            </tr>
-                        {/each}
-                        {#if backups.length === 0}
-                            <tr><td colspan="4" class="empty-row">No hay respaldos generados</td></tr>
-                        {/if}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-      </div>
-    {/if}
-  </section>
-
-  {#if confirmationModal.show}
-    <div class="modal-overlay" transition:fade>
-      <div class="modal-card" in:fly={{ y: 20 }}>
-        <h3>{confirmationModal.title}</h3><p>{confirmationModal.message}</p>
-        <div class="modal-actions"><button class="btn-secondary" on:click={() => confirmationModal.show = false}>Cancelar</button><button class="btn-danger" on:click={handleConfirm}>Confirmar</button></div>
-      </div>
+        {/each}
     </div>
-  {/if}
-  
-  <Wizard show={showWizard} on:complete={onWizardComplete} />
-  {/if}
-
-  <!-- TOAST STACK CONTAINER -->
-  <div class="toast-container">
-      {#each toasts as t (t.id)}
-          <div class="toast-card {t.type}" transition:fly={{ x: 20, duration: 300 }} animate:flip>
-              {t.message}
-          </div>
-      {/each}
-  </div>
 </main>
 
 <style>
-  :global(:root) {
-    --bg-obsidian: #0B0F19; --bg-surface: #161e31; --bg-glass: rgba(11, 15, 25, 0.7); --border-subtle: rgba(255, 255, 255, 0.08);
-    --primary-mint: #34d399; --mint-dark: #059669; --accent-indigo: #6366f1; --status-error: #EF3340; --status-warning: #fbbf24; --status-info: #60a5fa;
-    --radius-md: 12px; --radius-lg: 16px; --elevation-1: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); --elevation-2: 0 3px 6px rgba(0,0,0,0.16), 0 3px 6px rgba(0,0,0,0.23);
-    --font-family: 'Outfit', sans-serif;
-  }
-  :global(body) { margin: 0; font-family: var(--font-family); background-color: var(--bg-obsidian); color: #ecf0f1; overflow: hidden; }
-  main { display: flex; height: 100vh; }
-  .content { flex: 1; padding: 2rem; overflow-y: auto; background-color: #0B0F19; }
-  .panel { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
-  .card, .kpi-card { 
-      background: var(--bg-surface); padding: 1.5rem; border-radius: var(--radius-lg); 
-      border: 1px solid var(--border-subtle); 
-      /* Optimización: Sin sombras pesadas por defecto */
-      box-shadow: none;
-      transition: transform 0.2s ease, border-color 0.2s ease; 
-  }
-  .card:hover, .kpi-card:hover { 
-      transform: translateY(-2px); 
-      border-color: rgba(255,255,255,0.15);
-      /* Sombra ligera solo en hover */
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  }
-  input, select { 
-      background: rgba(255, 255, 255, 0.03); 
-      border: 1px solid transparent; 
-      border-bottom: 1px solid #475569; 
-      color: white; padding: 14px 16px; 
-      border-radius: 8px 8px 0 0; 
-      font-family: inherit; width: 100%; box-sizing: border-box; 
-      transition: background-color 0.2s, border-color 0.2s; 
-  }
-  /* Custom Dark Select */
-  .dark-select {
-      appearance: none;
-      -webkit-appearance: none;
-      -moz-appearance: none;
-      background-color: rgba(255, 255, 255, 0.03);
-      background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 12px center;
-      background-size: 16px;
-      color: white;
-      padding-right: 40px; /* Espacio para la flecha */
-      border-bottom: 1px solid #475569;
-      border-radius: 8px 8px 0 0;
-  }
-  .dark-select option {
-      background-color: #1e293b; /* Fondo oscuro para las opciones desplegadas */
-      color: white;
-  }
-  .dark-select:focus {
-      background-color: rgba(255, 255, 255, 0.06);
-      border-bottom-color: var(--primary-mint);
-  }
-  .btn-primary { 
-      background: var(--primary-mint); color: #064e3b; border: none; 
-      padding: 12px 24px; border-radius: var(--radius-md); font-weight: 700; cursor: pointer; 
-      transition: transform 0.1s, background-color 0.2s; 
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
-  }
-  .btn-primary:hover { background: var(--mint-dark); color: #fff; transform: translateY(-1px); }
-  .btn-primary:disabled { background: #334155; color: #94a3b8; cursor: not-allowed; transform: none; box-shadow: none; }
-  .btn-secondary { 
-      background: rgba(255, 255, 255, 0.05); color: #fff; border: 1px solid var(--border-subtle); 
-      padding: 10px 20px; border-radius: var(--radius-md); cursor: pointer; 
-      transition: background-color 0.2s, border-color 0.2s; 
-  }
-  .btn-danger { background: var(--status-error); color: #fff; border: none; padding: 10px 20px; border-radius: var(--radius-md); cursor: pointer; transition: background 0.2s; }
-  .btn-icon { background: var(--primary-mint); color: #000; width: 40px; height: 40px; border: none; border-radius: 12px; cursor: pointer; font-size: 1.5rem; transition: background 0.2s; }
-  .btn-icon-small { background: transparent; border: none; cursor: pointer; font-size: 1.1rem; transition: transform 0.1s; }
-  .text-danger { color: #ef4444; background: transparent; border: none; cursor: pointer; font-size: 1.2rem; }
-  .btn-primary:active, .btn-secondary:active, .btn-danger:active { transform: scale(0.96); }
-  .loading-overlay { position: fixed; inset: 0; background: rgba(11, 15, 25, 0.8); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; }
-  .spinner { width: 50px; height: 50px; border: 3px solid rgba(52, 211, 153, 0.1); border-top-color: var(--primary-mint); border-radius: 50%; animation: spin 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite; filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.5)); }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-track { background: #0B0F19; } ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-  .kpi-card .title { font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.5rem; } .kpi-card .value { font-size: 1.8rem; font-weight: bold; color: white; }
-  .status-indicator { display: flex; align-items: center; gap: 8px; font-weight: bold; margin-top: 5px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; } .dot.green { background: #34d399; } .dot.red { background: #ef4444; }
-  .grid { display: grid; gap: 1rem; } .col-2 { grid-template-columns: 1fr 1fr; } .col-3 { grid-template-columns: 1fr 2fr 1fr; }
-  .header-row { display: flex; justify-content: space-between; align-items: center; } .header-actions { display: flex; gap: 10px; align-items: center; }
-  .date-selector { display: flex; align-items: center; gap: 5px; background: #161e31; padding: 4px 10px; border-radius: 8px; border: 1px solid #334155; }
-  .date-selector input { background: transparent; border: none; padding: 4px; color: white; }
-  .field { display: flex; flex-direction: column; gap: 6px; } .input-group { display: flex; gap: 8px; }
-  .search-input { background: #0f1523; border: none; padding: 8px 12px; color: white; border-radius: 6px; }
-  .search-input.full-width { width: 100%; font-size: 1rem; padding: 12px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); }
-  .dropdown { 
-      position: absolute; top: 100%; left: 0; right: 0; 
-      background: #1e293b; border: 1px solid #34d399; 
-      border-radius: 0 0 8px 8px; z-index: 1000; 
-      max-height: 250px; overflow-y: auto; 
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-  }
-  .dropdown button { width: 100%; padding: 12px; background: transparent; border: none; color: white; text-align: left; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); }
-  .dropdown button:hover { background: rgba(52, 211, 153, 0.1); }
-  .chart-container { height: 250px; display: flex; align-items: flex-end; justify-content: center; padding-top: 20px; }
-  .bar-chart { display: flex; align-items: flex-end; gap: 15px; height: 100%; width: 100%; }
-  .bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; }
-  .bar { width: 100%; border-radius: 4px 4px 0 0; background: linear-gradient(to top, #059669, #34d399); transition: height 0.5s ease; }
-  .add-item-row { display: flex; gap: 10px; background: #0f1523; padding: 10px; border-radius: 8px; align-items: center; }
-  .grow { flex: 1; } .small { width: 80px; } .medium { width: 120px; }
-  table { width: 100%; border-collapse: collapse; } th { text-align: left; color: #64748b; font-size: 0.8rem; padding: 10px; border-bottom: 1px solid #334155; } td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-  .badge { padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
-  .badge.AUTORIZADO, .badge.SUCCESS { background: rgba(52, 211, 153, 0.1); color: var(--primary-mint); }
-  .badge.FAILED, .badge.ERROR { background: rgba(239, 68, 68, 0.1); color: #f87171; }
-  .badge.PENDIENTE, .badge.INFO { background: rgba(251, 191, 36, 0.1); color: #fbbf24; }
-  .modal-overlay { position: fixed; inset: 0; background: rgba(11, 15, 25, 0.7); display: flex; align-items: center; justify-content: center; z-index: 150; }
-  .modal-card { background: #161e31; padding: 2rem; border-radius: 12px; width: 400px; }
-  .dashboard-layout { display: flex; flex-direction: column; gap: 1.5rem; }
-  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
-  .glass { 
-      background: #161e31; 
-      border: 1px solid rgba(255,255,255,0.05); 
-      border-radius: 16px; padding: 1.2rem;
-      transition: transform 0.2s, box-shadow 0.2s;
-  }
-  .kpi-card { display: flex; align-items: center; gap: 1rem; }
-  .kpi-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
-  .kpi-icon.mint { background: rgba(52, 211, 153, 0.15); color: #34d399; }
-  .kpi-icon.blue { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
-  .kpi-icon.orange { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
-  .section-chart { padding: 1.5rem; height: 320px; display: flex; flex-direction: column; }
-  .mini-table { display: flex; flex-direction: column; gap: 0.8rem; }
-  .mini-row { display: flex; align-items: center; justify-content: space-between; padding: 0.8rem; background: rgba(255,255,255,0.02); border-radius: 8px; }
-  .status-badge { font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
-  .status-badge.online { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
-  .status-badge.offline { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-  .gradient-text { background: linear-gradient(45deg, #34d399, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 10px; }
-  .status-dot.AUTORIZADO { background: #34d399; }
-  .col-main { display: flex; flex-direction: column; flex: 1; }
-  .secuencial { font-family: monospace; font-size: 0.8rem; color: #94a3b8; }
-  .client { font-size: 0.9rem; font-weight: 500; }
-  .amount { font-weight: 700; color: white; }
-  .link-btn { background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 0.85rem; }
-  .link-btn:hover { text-decoration: underline; }
-  .btn-icon-soft { background: rgba(255,255,255,0.05); border: none; width: 36px; height: 36px; border-radius: 50%; color: white; cursor: pointer; }
-  
-  /* --- INVOICE UI STYLES --- */
-  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; }
-  .section-header h3 { margin: 0; font-size: 1rem; color: #e2e8f0; display: flex; align-items: center; gap: 8px; }
-  
-  .secuencial-box { background: rgba(52, 211, 153, 0.1); padding: 4px 12px; border-radius: 6px; border: 1px solid rgba(52, 211, 153, 0.2); text-align: right; }
-  .secuencial-box .label { display: block; font-size: 0.65rem; color: #34d399; font-weight: 700; text-transform: uppercase; }
-  .secuencial-box .number { font-family: monospace; font-size: 1rem; font-weight: 700; color: white; letter-spacing: 1px; }
-
-  .client-grid { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 1rem; margin-top: 1rem; }
-  .span-2 { grid-column: span 2; }
-  .full-search-input { width: 100%; font-size: 1rem; padding: 12px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: white; }
-  
-  .search-container { position: relative; } /* Fix: Dropdown positioning context */
-
-  .add-product-bar { display: flex; gap: 10px; background: #0f1523; padding: 12px; border-radius: 12px; align-items: center; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 1rem; flex-wrap: wrap; }
-  .search-box-product { flex: 2; position: relative; min-width: 200px; } /* Already has relative, confirming */
-  .search-box-product input { background: transparent; border: none; border-bottom: 1px solid #475569; padding: 8px; width: 100%; color: white; }
-  
-  .input-code { width: 80px; }
-  .input-desc { flex: 2; min-width: 150px; }
-  .input-qty { width: 60px; text-align: center; }
-  .input-price { width: 90px; text-align: right; }
-  .input-tax { width: 80px; }
-  
-  .btn-add { background: var(--primary-mint); color: #064e3b; border: none; padding: 0 20px; height: 44px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: transform 0.1s; }
-  .btn-add:hover { transform: scale(1.02); background: var(--mint-dark); color: white; }
-  .btn-remove { background: transparent; color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: background 0.2s; }
-  .btn-remove:hover { background: rgba(239, 68, 68, 0.1); }
-
-  .invoice-table th { background: rgba(255,255,255,0.02); font-weight: 600; color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px; text-align: left; }
-  .invoice-table td { padding: 12px 10px; font-size: 0.9rem; border-bottom: 1px solid rgba(255,255,255,0.03); }
-  .tag-tax { background: #334155; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; color: #cbd5e1; }
-  .text-right { text-align: right; }
-  .text-center { text-align: center; }
-  .empty-row { text-align: center; padding: 2rem; color: #64748b; font-style: italic; }
-
-  .footer-panel { display: flex; gap: 2rem; margin-top: 1rem; }
-  .notes-area { flex: 1; }
-  .notes-area textarea { width: 100%; height: 100px; background: rgba(255,255,255,0.03); border: 1px solid #475569; border-radius: 8px; padding: 10px; color: white; resize: none; font-family: inherit; }
-  .totals-area { width: 320px; background: #0f1523; padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
-  .total-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; color: #94a3b8; }
-  .total-row.grand-total { border-top: 1px solid #334155; padding-top: 12px; margin-top: 12px; font-size: 1.2rem; color: white; font-weight: 700; }
-  .total-row.grand-total .mono { color: var(--primary-mint); }
-  .full-width { width: 100%; margin-top: 1rem; }
-
-  /* --- SPECIALIZED LAYOUTS --- */
-  
-  /* Toolbar (History) */
-  .toolbar { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; justify-content: space-between; padding: 0.5rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
-  .date-group { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); }
-  .label-tiny { font-size: 0.75rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
-  .input-tiny { border: none; background: transparent; color: white; padding: 2px; font-size: 0.85rem; width: auto; }
-  .search-wrapper { flex: 1; max-width: 400px; }
-  .search-input-compact { width: 100%; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 6px 10px; border-radius: 6px; color: white; font-size: 0.9rem; }
-  .search-input-compact:focus { border-color: var(--primary-mint); }
-  
-  /* Dense Table Optimized */
-  .dense-table th { padding: 12px 15px; font-size: 0.75rem; background: rgba(0,0,0,0.15); text-transform: uppercase; color: #94a3b8; font-weight: 600; text-align: left; }
-  .dense-table td { padding: 12px 15px; font-size: 0.95rem; border-bottom: 1px solid rgba(255,255,255,0.03); color: #e2e8f0; }
-  
-  /* Config Action Spacing */
-  .actions-right { display: flex; justify-content: flex-end; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.05); }
-
-  /* Sync Spacing */
-  .sync-container { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; flex: 1; overflow: hidden; min-height: 0; }
-  .log-item { padding: 1.2rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: background 0.2s; display: flex; flex-direction: column; gap: 4px; }
-
-  /* Restored styles */
-  .btn-icon-mini { background: transparent; border: 1px solid rgba(255,255,255,0.1); width: 26px; height: 26px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.9rem; cursor: pointer; margin-right: 4px; transition: all 0.1s; color: #cbd5e1; }
-  .btn-icon-mini:hover { background: rgba(255,255,255,0.1); color: white; transform: scale(1.1); }
-  .btn-icon-mini.danger:hover { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; }
-
-  .master-detail-layout { display: grid; grid-template-columns: 320px 1fr; gap: 1.5rem; height: calc(100vh - 180px); }
-  .sidebar-form { height: fit-content; position: sticky; top: 0; display: flex; flex-direction: column; gap: 1rem; }
-  .sidebar-form h3 { margin: 0 0 1rem 0; font-size: 1.1rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; }
-  .form-stack { display: flex; flex-direction: column; gap: 12px; }
-  .col-2-tight { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .scrollable-area { display: flex; flex-direction: column; overflow: hidden; height: 100%; }
-  .table-header { padding: 10px 15px; background: rgba(0,0,0,0.15); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
-  .table-header h3 { margin: 0; font-size: 0.95rem; }
-  .table-body-scroll { flex: 1; overflow-y: auto; }
-  .text-mint { color: #34d399; }
-  .text-small { font-size: 0.8rem; color: #94a3b8; }
-  .no-padding { padding: 0 !important; overflow: hidden; }
-  
-  .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
-  .config-card { height: 100%; }
-  .config-card h3 { font-size: 1rem; color: var(--primary-mint); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px; }
-  .hint { display: block; margin-top: 4px; font-size: 0.75rem; color: #64748b; }
-  .alert-box { background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.2); color: #fbbf24; padding: 8px; border-radius: 6px; font-size: 0.75rem; margin-top: 1rem; }
-    .compact { padding: 4px 8px; font-size: 0.8rem; }
-  
-      /* --- SPLASH SCREEN --- */
-      .splash-screen {
-          position: fixed; inset: 0; background: #0B0F19; z-index: 9999;
-          display: flex; align-items: center; justify-content: center;
-          flex-direction: column;
-      }    .splash-content {
-        text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2rem;
-    }
-    .splash-title {
-        font-size: 4rem; font-weight: 200; color: white; margin: 0;
-        letter-spacing: 12px;
-        background: linear-gradient(to right, #fff, #94a3b8);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        animation: tracking-in 1.5s cubic-bezier(0.215, 0.610, 0.355, 1.000) both;
-    }
-    .splash-subtitle {
-        color: var(--primary-mint); font-size: 0.8rem; letter-spacing: 4px; font-weight: 600;
-        margin-top: 0.5rem; opacity: 0;
-        animation: fade-in-up 1s ease-out 0.5s forwards;
-    }
-    .splash-line {
-        width: 0; height: 1px; background: rgba(255,255,255,0.1); margin: 10px auto;
-        animation: expand-width 1s ease-out 0.2s forwards;
-    }
-    
-    .loader-bar {
-        width: 200px; height: 2px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;
-        margin-top: 2rem;
-    }
-    .loader-progress {
-        height: 100%; background: var(--primary-mint); width: 0;
-        animation: load-progress 2s cubic-bezier(0.23, 1, 0.32, 1) forwards;
-        box-shadow: 0 0 10px var(--primary-mint);
-    }
-  
-    @keyframes tracking-in {
-        0% { letter-spacing: -0.5em; opacity: 0; }
-        40% { opacity: 0.6; }
-        100% { opacity: 1; }
-    }
-    @keyframes expand-width { to { width: 100px; } }
-    @keyframes fade-in-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes load-progress { 0% { width: 0; } 50% { width: 70%; } 100% { width: 100%; } }
-
-    /* --- LICENSE PANEL STYLES --- */
-    .license-overlay {
-        position: fixed; inset: 0; background: #0B0F19; z-index: 5000;
-        display: flex; align-items: center; justify-content: center;
-        background-image: radial-gradient(circle at center, #1e293b 0%, #0B0F19 100%);
-    }
-    .license-box {
-        width: 400px; padding: 3rem 2rem; text-align: center;
-        display: flex; flex-direction: column; align-items: center; gap: 1.5rem;
-        border: 1px solid rgba(52, 211, 153, 0.2);
-        box-shadow: 0 0 30px rgba(52, 211, 153, 0.1);
-    }
-    .lock-icon { font-size: 3rem; margin-bottom: 0.5rem; }
-    .license-box h2 { color: white; margin: 0; font-weight: 200; letter-spacing: 2px; }
-    .license-box p { color: #94a3b8; font-size: 0.9rem; line-height: 1.5; margin: 0; }
-    .license-form { width: 100%; display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
-    .text-center { text-align: center; font-family: monospace; letter-spacing: 1px; font-size: 1.1rem; }
-    .toast-inline {
-        margin-top: 1rem; padding: 10px; border-radius: 8px; font-size: 0.85rem; width: 100%;
-    }
-    .toast-inline.error { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
-    .toast-inline.success { background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
-
-    /* TOAST STACK */
-    .toast-container {
-        position: fixed; top: 20px; right: 20px; z-index: 10000;
-        display: flex; flex-direction: column; gap: 10px;
-        max-width: 350px;
-    }
-    .toast-card {
-        padding: 14px 20px; border-radius: 8px; font-weight: 500;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-        background: #1e293b; color: white; border-left: 4px solid #64748b;
-        font-size: 0.9rem;
-    }
-    .toast-card.success { border-left-color: #34d399; background: rgba(6, 78, 59, 0.95); }
-    .toast-card.error { border-left-color: #ef4444; background: rgba(127, 29, 29, 0.95); }
-    .toast-card.info { border-left-color: #60a5fa; background: rgba(30, 58, 138, 0.95); }
-
-    /* NOTIFICATION PANEL */
-    .notification-wrapper { position: relative; }
-    .notification-badge { position: absolute; top: 0; right: 0; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; border: 2px solid #161e31; }
-    
-    .notification-panel {
-        position: absolute; top: 100%; right: 0; width: 300px; margin-top: 10px;
-        background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 200; overflow: hidden;
-    }
-    .notif-header { padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; background: #0f172a; }
-    .notif-header h4 { margin: 0; font-size: 0.9rem; color: #e2e8f0; }
-    .link-btn-small { background: none; border: none; color: #94a3b8; font-size: 0.75rem; cursor: pointer; }
-    .link-btn-small:hover { color: #fff; text-decoration: underline; }
-    
-    .notif-list { max-height: 300px; overflow-y: auto; }
-    .notif-item { padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; }
-    .notif-item:hover { background: rgba(255,255,255,0.03); }
-    .notif-item.error .notif-msg { color: #fca5a5; }
-    .notif-item.success .notif-msg { color: #86efac; }
-    .notif-msg { font-size: 0.85rem; margin-bottom: 4px; line-height: 1.4; }
-    .notif-time { font-size: 0.7rem; color: #64748b; }
-    .empty-notif { padding: 20px; text-align: center; color: #64748b; font-size: 0.85rem; font-style: italic; }
-
-    /* Logo Styles */
-    .logo-preview-container { display: flex; align-items: center; gap: 15px; margin-bottom: 10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; }
-    .logo-preview { width: 60px; height: 60px; object-fit: contain; border-radius: 4px; background: white; }
-    .logo-placeholder { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); border-radius: 4px; font-size: 0.7rem; color: #94a3b8; border: 1px dashed #475569; }
-    .logo-actions { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-
-    /* Environment Toggle */
-    .environment-toggle { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.2); padding: 4px 6px 4px 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); }
-    .environment-toggle .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
-    .environment-toggle .toggle-btn { 
-        border: none; padding: 6px 16px; border-radius: 16px; font-weight: 700; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
-    .environment-toggle .toggle-btn.test { background: #fbbf24; color: #78350f; } /* Amber for Test */
-    .environment-toggle .toggle-btn.prod { background: #34d399; color: #064e3b; } /* Mint for Prod */
-    .environment-toggle .toggle-btn:hover { transform: scale(1.05); filter: brightness(1.1); }
-
-    /* SMTP Presets */
-    .smtp-presets { display: flex; gap: 8px; margin-bottom: 10px; }
-    .preset-btn { border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #cbd5e1; font-size: 0.75rem; padding: 4px 10px; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
-    .preset-btn:hover { background: rgba(255,255,255,0.1); color: white; }
-    .preset-btn.gmail:hover { border-color: #ef4444; color: #ef4444; }
-    .preset-btn.outlook:hover { border-color: #3b82f6; color: #3b82f6; }
-  
-  </style>
+    /* All styles delegated to style.css */
+</style>

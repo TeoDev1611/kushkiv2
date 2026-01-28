@@ -47,19 +47,22 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
+		OnStartup: func(ctx context.Context) {
+			app.startup(ctx)
+			// Backup en segundo plano al iniciar para no bloquear el cierre
+			go func() {
+				println("Iniciando respaldo automático en segundo plano...")
+				if err := app.CreateBackup(); err != nil {
+					println("Error en respaldo:", err.Error())
+				} else {
+					println("Respaldo completado.")
+				}
+			}()
+		},
 		OnShutdown: func(ctx context.Context) {
 			// Cerrar conexión DB para liberar archivo
 			if err := db.CloseDB(); err != nil {
 				println("Error cerrando DB:", err.Error())
-			}
-			
-			// Ejecutar Backup Automático al cerrar
-			println("Creando respaldo automático...")
-			if err := app.CreateBackup(); err != nil {
-				println("Error en respaldo:", err.Error())
-			} else {
-				println("Respaldo completado.")
 			}
 		},
 		Bind: []interface{}{

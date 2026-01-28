@@ -211,6 +211,80 @@ export namespace db {
 	        this.TaxPercentage = source["TaxPercentage"];
 	    }
 	}
+	export class QuotationItemDTO {
+	    codigo: string;
+	    nombre: string;
+	    cantidad: number;
+	    precio: number;
+	    codigoIVA: string;
+	    porcentajeIVA: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new QuotationItemDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.codigo = source["codigo"];
+	        this.nombre = source["nombre"];
+	        this.cantidad = source["cantidad"];
+	        this.precio = source["precio"];
+	        this.codigoIVA = source["codigoIVA"];
+	        this.porcentajeIVA = source["porcentajeIVA"];
+	    }
+	}
+	export class QuotationDTO {
+	    id: number;
+	    secuencial: string;
+	    fechaEmision: string;
+	    clienteID: string;
+	    clienteNombre: string;
+	    clienteDireccion: string;
+	    clienteEmail: string;
+	    clienteTelefono: string;
+	    observacion: string;
+	    total: number;
+	    items: QuotationItemDTO[];
+	    estado: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new QuotationDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.secuencial = source["secuencial"];
+	        this.fechaEmision = source["fechaEmision"];
+	        this.clienteID = source["clienteID"];
+	        this.clienteNombre = source["clienteNombre"];
+	        this.clienteDireccion = source["clienteDireccion"];
+	        this.clienteEmail = source["clienteEmail"];
+	        this.clienteTelefono = source["clienteTelefono"];
+	        this.observacion = source["observacion"];
+	        this.total = source["total"];
+	        this.items = this.convertValues(source["items"], QuotationItemDTO);
+	        this.estado = source["estado"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 
@@ -232,6 +306,20 @@ export namespace main {
 	        this.size = source["size"];
 	        this.date = source["date"];
 	        this.path = source["path"];
+	    }
+	}
+	export class ChartsDTO {
+	    revenueBar: string;
+	    clientsPie: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChartsDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.revenueBar = source["revenueBar"];
+	        this.clientsPie = source["clientsPie"];
 	    }
 	}
 	export class DailySale {
@@ -298,6 +386,38 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.total = source["total"];
 	        this.data = this.convertValues(source["data"], db.FacturaResumenDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class QuotationListResponse {
+	    total: number;
+	    data: db.QuotationDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new QuotationListResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.total = source["total"];
+	        this.data = this.convertValues(source["data"], db.QuotationDTO);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

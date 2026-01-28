@@ -90,43 +90,43 @@
       <div class="wizard-content">
           {#if step === 1}
               <div class="field">
-                  <label>RUC *</label>
-                  <input bind:value={config.RUC} placeholder="1790000000001" autofocus />
+                  <label for="w-ruc">RUC *</label>
+                  <input id="w-ruc" bind:value={config.RUC} placeholder="1790000000001" />
               </div>
               <div class="field">
-                  <label>Razón Social *</label>
-                  <input bind:value={config.RazonSocial} placeholder="Mi Empresa S.A." />
+                  <label for="w-razon">Razón Social *</label>
+                  <input id="w-razon" bind:value={config.RazonSocial} placeholder="Mi Empresa S.A." />
               </div>
               <div class="field">
-                  <label>Dirección Matriz</label>
-                  <input bind:value={config.Direccion} placeholder="Av. Principal 123" />
+                  <label for="w-dir">Dirección Matriz</label>
+                  <input id="w-dir" bind:value={config.Direccion} placeholder="Av. Principal 123" />
               </div>
               <div class="field">
-                  <label>Agente de Retención</label>
-                  <input bind:value={config.AgenteRetencion} placeholder="Ej: Resolución Nro. 1" />
+                  <label for="w-agente">Agente de Retención</label>
+                  <input id="w-agente" bind:value={config.AgenteRetencion} placeholder="Ej: Resolución Nro. 1" />
               </div>
               <div class="field">
-                  <label>Logo de Empresa (Opcional)</label>
+                  <label for="w-logo">Logo de Empresa (Opcional)</label>
                   <div class="input-group">
-                      <input bind:value={config.LogoPath} readonly placeholder="Seleccione su logo..." />
+                      <input id="w-logo" bind:value={config.LogoPath} readonly placeholder="Seleccione su logo..." />
                       <button class="btn-secondary" on:click={handleSelectLogo}>📷</button>
                   </div>
               </div>
           {:else if step === 2}
               <div class="field">
-                  <label>Archivo de Firma (.p12) *</label>
+                  <label for="w-p12">Archivo de Firma (.p12) *</label>
                   <div class="input-group">
-                      <input bind:value={config.P12Path} readonly placeholder="Seleccione archivo..." />
+                      <input id="w-p12" bind:value={config.P12Path} readonly placeholder="Seleccione archivo..." />
                       <button class="btn-secondary" on:click={handleSelectCert}>📂</button>
                   </div>
               </div>
               <div class="field">
-                  <label>Contraseña de Firma *</label>
+                  <label for="w-pass">Contraseña de Firma *</label>
                   <div class="input-group">
                       {#if showPassword}
-                          <input type="text" bind:value={config.P12Password} />
+                          <input id="w-pass" type="text" bind:value={config.P12Password} />
                       {:else}
-                          <input type="password" bind:value={config.P12Password} />
+                          <input id="w-pass" type="password" bind:value={config.P12Password} />
                       {/if}
                       <button class="btn-secondary" on:click={() => showPassword = !showPassword}>
                           {showPassword ? '🙈' : '👁️'}
@@ -135,10 +135,10 @@
               </div>
           {:else if step === 3}
               <div class="field">
-                  <label>Carpeta de Facturas</label>
+                  <label for="w-store">Carpeta de Facturas</label>
                   <p class="hint">Donde se guardarán los XMLs y PDFs generados.</p>
                   <div class="input-group">
-                      <input bind:value={config.StoragePath} readonly placeholder="Por defecto: Carpeta del usuario" />
+                      <input id="w-store" bind:value={config.StoragePath} readonly placeholder="Por defecto: Carpeta del usuario" />
                       <button class="btn-secondary" on:click={handleSelectStorage}>📂</button>
                   </div>
               </div>
@@ -149,24 +149,24 @@
               </div>
           {:else if step === 4}
               <div class="field">
-                  <label>Servidor SMTP (Host)</label>
-                  <input bind:value={config.SMTPHost} placeholder="smtp.gmail.com" />
+                  <label for="w-smtp">Servidor SMTP (Host)</label>
+                  <input id="w-smtp" bind:value={config.SMTPHost} placeholder="smtp.gmail.com" />
               </div>
               <div class="field">
-                  <label>Puerto SMTP</label>
-                  <input type="number" bind:value={config.SMTPPort} placeholder="587" />
+                  <label for="w-port">Puerto SMTP</label>
+                  <input id="w-port" type="number" bind:value={config.SMTPPort} placeholder="587" />
               </div>
               <div class="field">
-                  <label>Usuario / Correo</label>
-                  <input bind:value={config.SMTPUser} placeholder="tu@empresa.com" />
+                  <label for="w-user">Usuario / Correo</label>
+                  <input id="w-user" bind:value={config.SMTPUser} placeholder="tu@empresa.com" />
               </div>
               <div class="field">
-                  <label>Contraseña</label>
+                  <label for="w-smtppass">Contraseña</label>
                   <div class="input-group">
                       {#if showSMTPPassword}
-                          <input type="text" bind:value={config.SMTPPassword} />
+                          <input id="w-smtppass" type="text" bind:value={config.SMTPPassword} />
                       {:else}
-                          <input type="password" bind:value={config.SMTPPassword} />
+                          <input id="w-smtppass" type="password" bind:value={config.SMTPPassword} />
                       {/if}
                       <button class="btn-secondary" on:click={() => showSMTPPassword = !showSMTPPassword}>
                           {showSMTPPassword ? '🙈' : '👁️'}

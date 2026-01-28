@@ -10,12 +10,20 @@ export function CheckLicense() {
   return window['go']['main']['App']['CheckLicense']();
 }
 
+export function ConvertQuotationToInvoice(arg1) {
+  return window['go']['main']['App']['ConvertQuotationToInvoice'](arg1);
+}
+
 export function CreateBackup() {
   return window['go']['main']['App']['CreateBackup']();
 }
 
 export function CreateInvoice(arg1) {
   return window['go']['main']['App']['CreateInvoice'](arg1);
+}
+
+export function CreateQuotation(arg1) {
+  return window['go']['main']['App']['CreateQuotation'](arg1);
 }
 
 export function DeleteClient(arg1) {
@@ -54,12 +62,24 @@ export function GetMailLogs() {
   return window['go']['main']['App']['GetMailLogs']();
 }
 
+export function GetNextQuotationSecuencial() {
+  return window['go']['main']['App']['GetNextQuotationSecuencial']();
+}
+
 export function GetNextSecuencial() {
   return window['go']['main']['App']['GetNextSecuencial']();
 }
 
 export function GetProducts() {
   return window['go']['main']['App']['GetProducts']();
+}
+
+export function GetQuotations(arg1, arg2) {
+  return window['go']['main']['App']['GetQuotations'](arg1, arg2);
+}
+
+export function GetStatisticsCharts() {
+  return window['go']['main']['App']['GetStatisticsCharts']();
 }
 
 export function GetSyncLogs() {
@@ -86,6 +106,10 @@ export function OpenInvoiceXML(arg1) {
   return window['go']['main']['App']['OpenInvoiceXML'](arg1);
 }
 
+export function OpenQuotationPDF(arg1) {
+  return window['go']['main']['App']['OpenQuotationPDF'](arg1);
+}
+
 export function ResendInvoiceEmail(arg1) {
   return window['go']['main']['App']['ResendInvoiceEmail'](arg1);
 }
@@ -104,6 +128,10 @@ export function SaveProduct(arg1) {
 
 export function SearchClients(arg1) {
   return window['go']['main']['App']['SearchClients'](arg1);
+}
+
+export function SearchInvoicesSmart(arg1) {
+  return window['go']['main']['App']['SearchInvoicesSmart'](arg1);
 }
 
 export function SearchProducts(arg1) {

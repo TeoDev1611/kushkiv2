@@ -1,12 +1,20 @@
-# Kushki Facturador v2.5 - Professional Edition 🚀
+# Kushki Facturador v2.6 - Professional Edition 🚀
 
 ![Status](https://img.shields.io/badge/Estado-Producción_Estable-success)
-![Version](https://img.shields.io/badge/Versión-2.5.0-blue)
+![Version](https://img.shields.io/badge/Versión-2.6.0-blue)
 ![Licencia](https://img.shields.io/badge/Licencia-Node_Locked-orange)
 
 Sistema de facturación electrónica de escritorio para Ecuador, diseñado con una arquitectura híbrida (Go + Svelte) que prioriza la autonomía del usuario, la seguridad de datos y una experiencia visual moderna.
 
 ## 🌟 Características Destacadas
+
+### 📊 Inteligencia de Negocios (Nuevo)
+*   **Gráficos Avanzados:** Visualización interactiva de ingresos (Línea) y distribución de clientes (Pastel) usando `go-echarts`.
+*   **Búsqueda Inteligente (Fuzzy):** Motor de búsqueda tolerante a errores tipográficos en Clientes, Productos y Facturas. Encuentra "Juan" aunque escribas "Juna".
+
+### 📝 Gestión de Cotizaciones (Nuevo)
+*   **Módulo Completo:** Creación, gestión y conversión automática de Cotizaciones a Facturas.
+*   **PDF Profesional:** Generación automática de documentos de cotización en PDF listos para enviar.
 
 ### 🎨 Experiencia de Usuario (UX)
 *   **Interfaz "Obsidian & Mint":** Diseño oscuro moderno con acentos visuales claros para estados (Éxito, Error, Pendiente).
@@ -44,7 +52,8 @@ La documentación detallada se encuentra en la carpeta `docs/`:
 *   **Core:** Go 1.24 (Backend), Wails v2 (Bridge).
 *   **UI:** Svelte + Vite (Frontend).
 *   **Datos:** SQLite + GORM (ORM).
-*   **Reportes:** Maroto (PDF Engine).
+*   **Reportes:** Maroto (PDF Engine) + Go-Echarts (Gráficos).
+*   **Search:** Sahilm/Fuzzy (Búsqueda Aproximada).
 
 ## 🚀 Inicio Rápido (Desarrollo)
 

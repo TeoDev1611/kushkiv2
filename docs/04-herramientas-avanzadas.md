@@ -28,11 +28,11 @@ Ubicado en la pestaña **"Respaldos"** (Icono de disquete 💾).
 Tus datos son lo más importante. Este módulo te permite:
 *   **Ver Historial:** Lista de todos los respaldos generados anteriormente con su peso y fecha.
 *   **Generar Respaldo:** El botón "Crear Respaldo Ahora" comprime:
-    1.  Tu base de datos (`kushki.db`).
-    2.  Todas tus carpetas de facturas (XMLs y PDFs).
+    1.  Tu base de datos (`kushki.db`) incluyendo **Facturas y Cotizaciones**.
+    2.  Todas tus carpetas de documentos generados (XMLs y PDFs).
 *   El resultado es un archivo `.zip` listo para guardar en una nube externa o USB.
 
 ## 3. Notificaciones del Sistema
 En la cabecera superior derecha (icono 🔔), encontrarás el centro de notificaciones de la sesión.
-*   Guarda un historial temporal de lo que ha sucedido mientras usabas la app (ej. "Factura enviada", "Error de conexión").
+*   Guarda un historial temporal de lo que ha sucedido mientras usabas la app (ej. "Factura enviada", "Error de conexión", "Cotización convertida").
 *   Te permite revisar mensajes que desaparecieron de la pantalla (Toasts) si te los perdiste.

@@ -24,13 +24,15 @@ func NewInvoiceService() *InvoiceService {
 }
 
 func (s *InvoiceService) GetNextSecuencial() (string, error) {
-	var lastFactura db.Factura
-	result := db.GetDB().Order("created_at desc").First(&lastFactura)
+	var lastFacturas []db.Factura
+	// Usamos Find con Limit 1 para evitar el error "record not found" si está vacía
+	db.GetDB().Order("created_at desc").Limit(1).Find(&lastFacturas)
 	
-	if result.Error != nil {
+	if len(lastFacturas) == 0 {
 		// Si no hay facturas, empezamos en 1
 		return "000000001", nil
 	}
+	lastFactura := lastFacturas[0]
 
 	var currentSec int
 	fmt.Sscanf(lastFactura.Secuencial, "%d", &currentSec)

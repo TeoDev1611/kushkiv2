@@ -28,7 +28,10 @@ Asegúrate de:
 *   Que el archivo original sea un formato válido (JPG o PNG).
 *   Si cambiaste de computadora, recuerda volver a subir el logo para que el sistema genere la ruta local correcta.
 
-### 4. ¿Dónde están mis archivos físicamente?
+### 4. ¿Puedo convertir una Cotización en Factura?
+Sí. En la pestaña de Cotizaciones, busca la proforma que deseas facturar y haz clic en el botón de "Cohete" (🚀). Esto te llevará a la pantalla de emisión con todos los datos del cliente y productos ya cargados, listos para firmar.
+
+### 5. ¿Dónde están mis archivos físicamente?
 El sistema guarda todo en la ruta que elegiste en **Configuración -> Carpeta de Guardado**. Por defecto, se organizan así:
 `Ruta/Año/Mes/FACTURA-000000XXX.pdf`
 
@@ -48,7 +51,7 @@ El sistema guarda todo en la ruta que elegiste en **Configuración -> Carpeta de
 *   **Causa:** El backend está procesando una base de datos bloqueada o muy grande.
 *   **Solución:** Espera 8 segundos; el sistema tiene un "Safety Timer" que forzará la carga de la interfaz automáticamente.
 
-### Las estadísticas muestran $0.00
+### Las estadísticas no se actualizan
 *   **Causa:** Solo se suman las facturas con estado `AUTORIZADO`.
 *   **Solución:** Si tus facturas están `PENDIENTES` o `DEVUELTAS`, no contarán para el total de ventas. Verifica el estado en el Historial.
 

@@ -130,6 +130,40 @@ type EmailQueue struct {
 	UpdatedAt  time.Time
 }
 
+// Quotation representa una cotización en la base de datos.
+type Quotation struct {
+	ID              uint      `gorm:"primaryKey"`
+	Secuencial      string    `gorm:"size:9;index"` // Ej: 000000001
+	FechaEmision    time.Time
+	ClienteID       string
+	ClienteNombre   string
+	ClienteDireccion string
+	ClienteEmail    string
+	ClienteTelefono string
+	Observacion     string
+	Total           float64
+	Subtotal15      float64
+	Subtotal0       float64
+	IVA             float64
+	PDFBytes        []byte    `gorm:"type:blob"` // Guardamos el PDF generado
+	Estado          string    // BORRADOR, ENVIADA, FACTURADA, RECHAZADA
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// QuotationItem almacena el detalle de cada producto en una cotización.
+type QuotationItem struct {
+	ID              uint    `gorm:"primaryKey"`
+	QuotationID     uint    `gorm:"index"`
+	ProductoSKU     string
+	Nombre          string
+	Cantidad        float64
+	PrecioUnitario  float64
+	Subtotal        float64
+	PorcentajeIVA   float64
+	CreatedAt       time.Time
+}
+
 // --- DTOs ---
 
 type EmisorConfigDTO struct {
@@ -199,6 +233,30 @@ type FacturaResumenDTO struct {
 }
 
 type InvoiceItem struct {
+	Codigo        string  `json:"codigo"`
+	Nombre        string  `json:"nombre"`
+	Cantidad      float64 `json:"cantidad"`
+	Precio        float64 `json:"precio"`
+	CodigoIVA     string  `json:"codigoIVA"`
+	PorcentajeIVA float64 `json:"porcentajeIVA"`
+}
+
+type QuotationDTO struct {
+	ID              uint           `json:"id"`
+	Secuencial      string         `json:"secuencial"`
+	FechaEmision    string         `json:"fechaEmision"`
+	ClienteID       string         `json:"clienteID"`
+	ClienteNombre   string         `json:"clienteNombre"`
+	ClienteDireccion string        `json:"clienteDireccion"`
+	ClienteEmail    string         `json:"clienteEmail"`
+	ClienteTelefono string         `json:"clienteTelefono"`
+	Observacion     string         `json:"observacion"`
+	Total           float64        `json:"total"`
+	Items           []QuotationItemDTO `json:"items"`
+	Estado          string         `json:"estado"`
+}
+
+type QuotationItemDTO struct {
 	Codigo        string  `json:"codigo"`
 	Nombre        string  `json:"nombre"`
 	Cantidad      float64 `json:"cantidad"`

@@ -30,6 +30,9 @@ type App struct {
 	syncService    *service.SyncService
 	cloudService   *service.CloudService
 	mailService    *service.MailService
+	quotationService *service.QuotationService
+	searchService  *service.SearchService
+	chartService   *service.ChartService
 }
 
 // DashboardStats contiene las métricas clave para el panel de control del frontend.
@@ -51,6 +54,11 @@ type FacturasResponse struct {
 	Data  []db.FacturaResumenDTO `json:"data"`
 }
 
+type QuotationListResponse struct {
+	Total int64             `json:"total"`
+	Data  []db.QuotationDTO `json:"data"`
+}
+
 // NewApp creates a new App application struct
 func NewApp() *App {
 	for _, arg := range os.Args {
@@ -66,6 +74,9 @@ func NewApp() *App {
 		syncService:    service.NewSyncService(),
 		cloudService:   service.NewCloudService(),
 		mailService:    service.NewMailService(),
+		quotationService: service.NewQuotationService(),
+		searchService:  service.NewSearchService(),
+		chartService:   service.NewChartService(),
 	}
 }
 
@@ -1000,15 +1011,12 @@ func (a *App) GetProducts() []db.ProductDTO {
 }
 
 func (a *App) SearchProducts(query string) []db.ProductDTO {
-	var products []db.Product
-	likeQuery := "%" + query + "%"
-	// OPTIMIZACIÓN: Limitamos a 50 resultados para mantener la búsqueda ágil.
-	db.GetDB().Where("name LIKE ? OR sku LIKE ?", likeQuery, likeQuery).Limit(50).Find(&products)
-	var dtos []db.ProductDTO
-	for _, p := range products {
-		dtos = append(dtos, db.ProductDTO{SKU: p.SKU, Name: p.Name, Price: p.Price, Stock: p.Stock, TaxCode: strconv.Itoa(p.TaxCode), TaxPercentage: p.TaxPercentage})
+	res, err := a.searchService.FuzzySearchProducts(query)
+	if err != nil {
+		logger.Error("Error fuzzy product: %v", err)
+		return []db.ProductDTO{}
 	}
-	return dtos
+	return res
 }
 
 func (a *App) SaveProduct(dto db.ProductDTO) string {
@@ -1042,4 +1050,95 @@ func (a *App) DeleteProduct(sku string) string {
 		return fmt.Sprintf("Error eliminando producto: %v", err)
 	}
 	return "Producto eliminado"
+}
+
+// --- GESTIÓN DE COTIZACIONES ---
+
+func (a *App) GetNextQuotationSecuencial() string {
+	sec, err := a.quotationService.GetNextSecuencial()
+	if err != nil {
+		return "000000001"
+	}
+	return sec
+}
+
+func (a *App) CreateQuotation(dto db.QuotationDTO) string {
+	err := a.quotationService.CreateQuotation(&dto)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+	return "Cotización creada exitosamente"
+}
+
+func (a *App) GetQuotations(page, pageSize int) QuotationListResponse {
+	if page < 1 { page = 1 }
+	if pageSize < 1 { pageSize = 10 }
+	
+	dtos, total := a.quotationService.GetQuotations(page, pageSize)
+	return QuotationListResponse{Total: total, Data: dtos}
+}
+
+func (a *App) OpenQuotationPDF(id uint) string {
+	pdfBytes, err := a.quotationService.GetPDF(id)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	tmpDir := os.TempDir()
+	fileName := fmt.Sprintf("COT-%d.pdf", id)
+	filePath := filepath.Join(tmpDir, fileName)
+
+	if err := os.WriteFile(filePath, pdfBytes, 0644); err != nil {
+		return fmt.Sprintf("Error escribiendo archivo temporal: %v", err)
+	}
+
+	var cmd *exec.Cmd
+	switch goruntime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", filePath)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", filePath)
+	default: // linux
+		cmd = exec.Command("xdg-open", filePath)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Sprintf("Error abriendo visor PDF: %v", err)
+	}
+
+	return "Abriendo PDF..."
+}
+
+func (a *App) ConvertQuotationToInvoice(id uint) *db.FacturaDTO {
+	dto, err := a.quotationService.ConvertToInvoice(id)
+	if err != nil {
+		logger.Error("Error convirtiendo cotización: %v", err)
+		return nil
+	}
+	return dto
+}
+
+// --- NUEVOS MÉTODOS (Fuzzy Search & Charts) ---
+
+func (a *App) SearchInvoicesSmart(query string) []db.FacturaResumenDTO {
+	res, err := a.searchService.FuzzySearchInvoices(query)
+	if err != nil {
+		logger.Error("Error fuzzy search: %v", err)
+		return []db.FacturaResumenDTO{}
+	}
+	return res
+}
+
+type ChartsDTO struct {
+	RevenueBar string `json:"revenueBar"`
+	ClientsPie string `json:"clientsPie"`
+}
+
+func (a *App) GetStatisticsCharts() ChartsDTO {
+	bar, _ := a.chartService.GenerateRevenueChart()
+	pie, _ := a.chartService.GenerateClientsPie()
+	return ChartsDTO{
+		RevenueBar: bar,
+		ClientsPie: pie,
+	}
 }

@@ -22,18 +22,29 @@ El núcleo del sistema. Permite generar facturas cumpliendo con la ficha técnic
 *   Manejo de formas de pago.
 *   Validaciones de montos para Consumidor Final.
 
-### 2. Gestión de Marca
+### 2. Gestión de Cotizaciones (Nuevo 🚀)
+Potencia tus ventas antes de facturar.
+*   **Creación de Proformas:** Genera cotizaciones profesionales en segundos.
+*   **Conversión Rápida:** Transforma una cotización aprobada en una Factura oficial con un solo clic, sin volver a escribir datos.
+*   **PDF Automático:** Tus clientes reciben documentos con tu marca listos para aprobar.
+
+### 3. Inteligencia de Negocios (Nuevo 📊)
+Toma decisiones basadas en datos reales.
+*   **Gráficos Avanzados:** Visualiza la evolución de tus ingresos mensuales y descubre quiénes son tus mejores clientes.
+*   **Búsqueda Inteligente (Fuzzy):** Encuentra cualquier documento, cliente o producto incluso si cometes errores al escribir (ej. encuentra "Juan" escribiendo "Juna").
+
+### 4. Gestión de Marca
 Tu factura es tu imagen. El sistema permite:
 *   Subir tu **Logo Corporativo**.
 *   Redimensionamiento inteligente de imágenes para que se vean perfectas en el PDF.
 *   Personalización de colores en el RIDE generado.
 
-### 3. Centro de Control (Dashboard)
+### 5. Centro de Control (Dashboard)
 Olvídate de las hojas de cálculo. El dashboard te ofrece:
 *   Ventas totales en tiempo real.
 *   Estado de conexión con el SRI.
-*   Gráfico de tendencias de ventas (filtrable por fecha).
+*   Gráficos interactivos de rendimiento.
 
-### 4. Independencia Tecnológica
+### 6. Independencia Tecnológica
 *   **Tu Correo, Tus Reglas:** Configura tu propio Gmail, Outlook o servidor corporativo para enviar las facturas. No dependes de un tercero para que tus correos lleguen.
 *   **Tus Datos:** Base de datos SQLite encriptada en tu disco duro.

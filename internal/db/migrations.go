@@ -16,6 +16,8 @@ func Migrate(db *gorm.DB) {
 		&EmailQueue{},
 		&FacturaItem{},
 		&MailLog{},
+		&Quotation{},
+		&QuotationItem{},
 	)
 	
 	// OPTIMIZACIÓN: Índices manuales para el Dashboard y Buscador
