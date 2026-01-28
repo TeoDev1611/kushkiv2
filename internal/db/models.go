@@ -38,6 +38,7 @@ type EmisorConfig struct {
 	// Archivos
 	StoragePath     string // Ruta base para guardar archivos
 	LogoPath        string // Ruta del logo para el RIDE
+	PDFTheme        string // modern, minimal, corporate (Default: modern)
 }
 
 // Client representa a los clientes/compradores.
@@ -79,11 +80,22 @@ type FacturaItem struct {
 	Cantidad         float64
 	PrecioUnitario   float64
 	Subtotal         float64
-	PorcentajeIVA    float64
-	CreatedAt        time.Time
-}
-
-// Product representa el inventario.
+		PorcentajeIVA   float64
+		CreatedAt       time.Time
+	}
+	
+	// RetencionRecibida almacena las retenciones que los clientes le hacen al usuario.
+	type RetencionRecibida struct {
+		gorm.Model
+		NumComprobante string    `json:"num_comprobante"`
+		RucEmisor      string    `json:"ruc_emisor"`
+		FechaEmision   time.Time `json:"fecha_emision"`
+		BaseImponible  float64   `json:"base_imponible"`
+		ValorRetenido  float64   `json:"valor_retenido"`
+		Tipo           string    `json:"tipo"` // IVA, RENTA
+	}
+	
+	// Product representa el inventario.
 type Product struct {
 	SKU           string `gorm:"primaryKey"`
 	Name          string `gorm:"index"`
@@ -181,12 +193,14 @@ type EmisorConfigDTO struct {
 	AgenteRetencion    string `json:"AgenteRetencion"`
 	StoragePath     string `json:"StoragePath"`
 	LogoPath        string `json:"LogoPath"`
+	PDFTheme        string `json:"PDFTheme"`
 	
 	// SMTP
 	SMTPHost        string `json:"SMTPHost"`
 	SMTPPort        int    `json:"SMTPPort"`
 	SMTPUser        string `json:"SMTPUser"`
 	SMTPPassword    string `json:"SMTPPassword"`
+
 }
 
 type ClientDTO struct {

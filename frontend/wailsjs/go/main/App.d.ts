@@ -48,6 +48,8 @@ export function GetSyncLogs():Promise<Array<service.SyncLog>>;
 
 export function GetTopProducts():Promise<Array<service.TopProduct>>;
 
+export function GetVATSummary(arg1:string,arg2:string):Promise<service.TaxSummary>;
+
 export function NotifyFrontend(arg1:string,arg2:string):Promise<void>;
 
 export function OpenFacturaPDF(arg1:string):Promise<string>;

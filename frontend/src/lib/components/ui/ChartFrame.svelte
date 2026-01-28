@@ -15,13 +15,15 @@
                     body { 
                         background-color: transparent !important; 
                         margin: 0; 
+                        padding: 0;
                         overflow: hidden;
-                        font-family: 'Inter', sans-serif !important;
+                        font-family: inherit;
                     }
-                    /* Force ECharts container to fit */
+                    /* Force ECharts container to fit and be clean */
                     .go-echarts { 
                         width: 100% !important; 
                         height: 100% !important; 
+                        border: none !important;
                     }
                 `;
                 doc.head.appendChild(style);

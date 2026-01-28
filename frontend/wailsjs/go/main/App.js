@@ -90,6 +90,10 @@ export function GetTopProducts() {
   return window['go']['main']['App']['GetTopProducts']();
 }
 
+export function GetVATSummary(arg1, arg2) {
+  return window['go']['main']['App']['GetVATSummary'](arg1, arg2);
+}
+
 export function NotifyFrontend(arg1, arg2) {
   return window['go']['main']['App']['NotifyFrontend'](arg1, arg2);
 }

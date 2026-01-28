@@ -40,13 +40,13 @@ func GenerarCotizacionPDF(cotizacion db.Quotation, items []db.QuotationItem, con
 			colLogo.Add(image.NewFromFile(configEmisor.LogoPath, props.Rect{Center: false, Percent: 100, Left: 0}))
 		}
 	} else {
-		colLogo.Add(text.New("KUSHKI APP", props.Text{Style: fontstyle.Bold, Color: brandPrimary, Size: 16}))
+		colLogo.Add(text.New("KUSHKI APP", props.Text{Style: fontstyle.Bold, Color: colorEmeraldPrimary, Size: 16}))
 	}
 
 	m.AddRow(20,
 		colLogo,
 		col.New(8).Add(
-			text.New("COTIZACIÓN", props.Text{Size: 14, Style: fontstyle.Bold, Align: align.Right, Color: brandPrimary, Top: 0}),
+			text.New("COTIZACIÓN", props.Text{Size: 14, Style: fontstyle.Bold, Align: align.Right, Color: colorEmeraldPrimary, Top: 0}),
 			text.New("No. "+cotizacion.Secuencial, props.Text{Size: 11, Align: align.Right, Top: 8, Style: fontstyle.Bold}),
 		),
 	)
@@ -56,13 +56,13 @@ func GenerarCotizacionPDF(cotizacion db.Quotation, items []db.QuotationItem, con
 	// --- FILA 2: Datos Emisor ---
 	m.AddRow(15,
 		col.New(6).Add(
-			text.New(configEmisor.RazonSocial, props.Text{Size: 11, Style: fontstyle.Bold, Color: textDark, Top: 0}),
-			text.New("RUC: "+configEmisor.RUC, props.Text{Size: 9, Color: textGray, Top: 6}),
-			text.New(configEmisor.Direccion, props.Text{Size: 8, Color: textGray, Top: 10}),
+			text.New(configEmisor.RazonSocial, props.Text{Size: 11, Style: fontstyle.Bold, Color: colorDarkGray, Top: 0}),
+			text.New("RUC: "+configEmisor.RUC, props.Text{Size: 9, Color: colorGray, Top: 6}),
+			text.New(configEmisor.Direccion, props.Text{Size: 8, Color: colorGray, Top: 10}),
 		),
 		col.New(6).Add(
 			text.New("FECHA DE EMISIÓN: "+cotizacion.FechaEmision.Format("02/01/2006"), props.Text{Size: 9, Align: align.Right, Top: 0, Style: fontstyle.Bold}),
-			text.New("VÁLIDO HASTA: "+cotizacion.FechaEmision.AddDate(0, 0, 15).Format("02/01/2006"), props.Text{Size: 8, Align: align.Right, Top: 6, Color: textGray}), // Validez 15 días hardcoded por ahora
+			text.New("VÁLIDO HASTA: "+cotizacion.FechaEmision.AddDate(0, 0, 15).Format("02/01/2006"), props.Text{Size: 8, Align: align.Right, Top: 6, Color: colorGray}), // Validez 15 días hardcoded por ahora
 		),
 	)
 
@@ -73,39 +73,39 @@ func GenerarCotizacionPDF(cotizacion db.Quotation, items []db.QuotationItem, con
 	// =========================================================================
 
 	m.AddRow(8,
-		col.New(12).WithStyle(&props.Cell{BackgroundColor: brandPrimary}).Add(
-			text.New("CLIENTE", props.Text{Size: 8, Style: fontstyle.Bold, Color: textWhite, Top: 2, Left: 2}),
+		col.New(12).WithStyle(&props.Cell{BackgroundColor: colorEmeraldPrimary}).Add(
+			text.New("CLIENTE", props.Text{Size: 8, Style: fontstyle.Bold, Color: colorWhite, Top: 2, Left: 2}),
 		),
 	)
 
 	m.AddRow(18,
-		col.New(7).WithStyle(&props.Cell{BackgroundColor: brandLight}).Add(
+		col.New(7).WithStyle(&props.Cell{BackgroundColor: colorEmeraldLight}).Add(
 			text.New("Nombre: "+cotizacion.ClienteNombre, props.Text{Size: 9, Style: fontstyle.Bold, Left: 2, Top: 2}),
 			text.New("Identificación: "+cotizacion.ClienteID, props.Text{Size: 8, Left: 2, Top: 8}),
 		),
-		col.New(5).WithStyle(&props.Cell{BackgroundColor: brandLight}).Add(
+		col.New(5).WithStyle(&props.Cell{BackgroundColor: colorEmeraldLight}).Add(
 			text.New("Dirección: "+cotizacion.ClienteDireccion, props.Text{Size: 8, Align: align.Right, Right: 2, Top: 2}),
 			text.New("Teléfono: "+cotizacion.ClienteTelefono, props.Text{Size: 8, Align: align.Right, Right: 2, Top: 8}),
 		),
 	)
 
-	m.AddRow(5, col.New(12).Add(line.New(props.Line{Color: brandPrimary, Thickness: 0.5})))
+	m.AddRow(5, col.New(12).Add(line.New(props.Line{Color: colorEmeraldPrimary, Thickness: 0.5})))
 
 	// =========================================================================
 	// 3. TABLA DETALLES
 	// =========================================================================
 
 	m.AddRow(9,
-		text.NewCol(2, "CÓDIGO", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Left, Color: textWhite, Top: 1.5, Left: 2}),
-		text.NewCol(1, "CANT.", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Center, Color: textWhite, Top: 1.5}),
-		text.NewCol(5, "DESCRIPCIÓN", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Left, Color: textWhite, Top: 1.5, Left: 2}),
-		text.NewCol(2, "P. UNIT", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Right, Color: textWhite, Top: 1.5, Right: 2}),
-		text.NewCol(2, "TOTAL", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Right, Color: textWhite, Top: 1.5, Right: 2}),
-	).WithStyle(&props.Cell{BackgroundColor: brandPrimary})
+		text.NewCol(2, "CÓDIGO", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Left, Color: colorWhite, Top: 1.5, Left: 2}),
+		text.NewCol(1, "CANT.", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Center, Color: colorWhite, Top: 1.5}),
+		text.NewCol(5, "DESCRIPCIÓN", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Left, Color: colorWhite, Top: 1.5, Left: 2}),
+		text.NewCol(2, "P. UNIT", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Right, Color: colorWhite, Top: 1.5, Right: 2}),
+		text.NewCol(2, "TOTAL", props.Text{Style: fontstyle.Bold, Size: 8, Align: align.Right, Color: colorWhite, Top: 1.5, Right: 2}),
+	).WithStyle(&props.Cell{BackgroundColor: colorEmeraldPrimary})
 
 	for _, item := range items {
 		m.AddRow(8,
-			text.NewCol(2, item.ProductoSKU, props.Text{Size: 8, Align: align.Left, Top: 2, Color: textGray, Left: 2}),
+			text.NewCol(2, item.ProductoSKU, props.Text{Size: 8, Align: align.Left, Top: 2, Color: colorGray, Left: 2}),
 			text.NewCol(1, fmtMoney(item.Cantidad), props.Text{Size: 8, Align: align.Center, Top: 2}),
 			text.NewCol(5, item.Nombre, props.Text{Size: 8, Align: align.Left, Top: 2, Left: 2}),
 			text.NewCol(2, fmtMoney(item.PrecioUnitario), props.Text{Size: 8, Align: align.Right, Top: 2, Right: 2}),
@@ -138,15 +138,15 @@ func GenerarCotizacionPDF(cotizacion db.Quotation, items []db.QuotationItem, con
 	colIzq := col.New(7)
 	if cotizacion.Observacion != "" {
 		colIzq.Add(text.New("Observaciones:", props.Text{Style: fontstyle.Bold, Size: 8}))
-		colIzq.Add(text.New(cotizacion.Observacion, props.Text{Size: 8, Top: 5, Color: textGray}))
+		colIzq.Add(text.New(cotizacion.Observacion, props.Text{Size: 8, Top: 5, Color: colorGray}))
 	}
 
 	for i, t := range totals {
 		colDerLbl := col.New(3)
 		colDerVal := col.New(2)
 
-		colDerLbl.Add(text.New(t.label, props.Text{Size: 8, Align: align.Right, Color: textGray, Right: 2}))
-		colDerVal.Add(text.New(t.val, props.Text{Size: 8, Align: align.Right, Color: textDark}))
+		colDerLbl.Add(text.New(t.label, props.Text{Size: 8, Align: align.Right, Color: colorGray, Right: 2}))
+		colDerVal.Add(text.New(t.val, props.Text{Size: 8, Align: align.Right, Color: colorDarkGray}))
 
 		// Truco para solo renderizar la columna izquierda una vez
 		if i == 0 {
@@ -161,9 +161,9 @@ func GenerarCotizacionPDF(cotizacion db.Quotation, items []db.QuotationItem, con
 	// --- Total Final Verde ---
 	m.AddRow(12,
 		col.New(7),
-		col.New(5).WithStyle(&props.Cell{BackgroundColor: brandPrimary}).Add(
-			text.New("TOTAL", props.Text{Size: 10, Style: fontstyle.Bold, Color: textWhite, Align: align.Left, Left: 4, Top: 3.5}),
-			text.New("$ "+fmtMoney(total), props.Text{Size: 12, Style: fontstyle.Bold, Color: textWhite, Align: align.Right, Right: 4, Top: 3}),
+		col.New(5).WithStyle(&props.Cell{BackgroundColor: colorEmeraldPrimary}).Add(
+			text.New("TOTAL", props.Text{Size: 10, Style: fontstyle.Bold, Color: colorWhite, Align: align.Left, Left: 4, Top: 3.5}),
+			text.New("$ "+fmtMoney(total), props.Text{Size: 12, Style: fontstyle.Bold, Color: colorWhite, Align: align.Right, Right: 4, Top: 3}),
 		),
 	)
 

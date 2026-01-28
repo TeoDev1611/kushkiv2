@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"kushkiv2/internal/db"
 	"kushkiv2/internal/service"
 	"kushkiv2/pkg/crypto"
@@ -15,7 +13,8 @@ import (
 	"path/filepath"
 	"regexp"
 	goruntime "runtime"
-	"sync"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -24,16 +23,17 @@ import (
 // App struct is the main application controller.
 // It handles the lifecycle, dependency injection of services, and exposes methods to the frontend.
 type App struct {
-	ctx            context.Context
-	invoiceService *service.InvoiceService
-	reportService  *service.ReportService
-	syncService    *service.SyncService
-	cloudService   *service.CloudService
-	mailService    *service.MailService
-	quotationService *service.QuotationService
-	searchService  *service.SearchService
-	chartService   *service.ChartService
-}
+	ctx              context.Context
+	invoiceService   *service.InvoiceService
+	reportService    *service.ReportService
+	syncService      *service.SyncService
+	cloudService     *service.CloudService
+	mailService      *service.MailService
+		quotationService *service.QuotationService
+		searchService  *service.SearchService
+		chartService   *service.ChartService
+		taxService     *service.TaxService
+	}
 
 // DashboardStats contiene las métricas clave para el panel de control del frontend.
 type DashboardStats struct {
@@ -69,16 +69,17 @@ func NewApp() *App {
 	}
 
 	return &App{
-		invoiceService: service.NewInvoiceService(),
-		reportService:  service.NewReportService(),
-		syncService:    service.NewSyncService(),
-		cloudService:   service.NewCloudService(),
-		mailService:    service.NewMailService(),
-		quotationService: service.NewQuotationService(),
-		searchService:  service.NewSearchService(),
-		chartService:   service.NewChartService(),
-	}
-}
+		invoiceService:   service.NewInvoiceService(),
+		reportService:    service.NewReportService(),
+		syncService:      service.NewSyncService(),
+		cloudService:     service.NewCloudService(),
+		mailService:      service.NewMailService(),
+				quotationService: service.NewQuotationService(),
+				searchService:  service.NewSearchService(),
+				chartService:   service.NewChartService(),
+				taxService:     service.NewTaxService(),
+			}
+		}
 
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
@@ -142,7 +143,7 @@ func (a *App) CheckLicense() bool {
 	if result.Error != nil {
 		return false
 	}
-	
+
 	// Validar que exista el token
 	if config.LicenseToken == "" {
 		return false
@@ -153,7 +154,7 @@ func (a *App) CheckLicense() bool {
 		fmt.Printf("Error validando licencia: %v\n", err)
 		return false
 	}
-	
+
 	return config.LicenseKey != ""
 }
 
@@ -178,10 +179,10 @@ func (a *App) ActivateLicense(key string) string {
 	// 2. Guardar Licencia y Token en DB
 	var config db.EmisorConfig
 	res := db.GetDB().First(&config)
-	
+
 	config.LicenseKey = key
 	config.LicenseToken = resp.Token // Guardamos el token para autenticación futura
-	
+
 	// Asegurar campos mínimos si es la primera vez
 	if config.RUC == "" {
 		config.RUC = "9999999999999" // Temporal
@@ -245,89 +246,47 @@ func (a *App) GetDashboardStats(startStr, endStr string) DashboardStats {
 	var stats DashboardStats
 	start, _ := time.Parse("2006-01-02", startStr)
 	end, _ := time.Parse("2006-01-02", endStr)
-	// Asegurar que el fin de día sea incluido (23:59:59)
 	end = end.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 
-	var wg sync.WaitGroup
-	wg.Add(4) // Lanzamos 4 tareas en paralelo
+	var facturas []db.Factura
+	// Cargamos TODAS las facturas del periodo para procesarlas manualmente (Más seguro que SQL puro en SQLite)
+	err := db.GetDB().Where("fecha_emision >= ? AND fecha_emision <= ?", start, end).Find(&facturas).Error
+	if err != nil {
+		logger.Error("Error cargando facturas para stats: %v", err)
+		return stats
+	}
 
-	// 1. Total Vendido (Solo facturas AUTORIZADAS)
-	go func() {
-		defer wg.Done()
-		db.GetDB().Model(&db.Factura{}).
-			Where("estado_sri = ?", "AUTORIZADO").
-			Where("fecha_emision BETWEEN ? AND ?", start, end).
-			Select("COALESCE(SUM(total), 0)").
-			Scan(&stats.TotalVentas)
-	}()
+	stats.TotalFacturas = int64(len(facturas))
+	trendMap := make(map[string]float64)
 
-	// 2. Conteo Total
-	go func() {
-		defer wg.Done()
-		db.GetDB().Model(&db.Factura{}).
-			Where("fecha_emision BETWEEN ? AND ?", start, end).
-			Count(&stats.TotalFacturas)
-	}()
-
-	// 3. Pendientes
-	go func() {
-		defer wg.Done()
-		db.GetDB().Model(&db.Factura{}).
-			Where("estado_sri IN ?", []string{"PENDIENTE", "DEVUELTA", "RECHAZADA", "PENDIENTE_ENVIO"}).
-			Where("fecha_emision BETWEEN ? AND ?", start, end).
-			Count(&stats.Pendientes)
-	}()
-
-	// 4. Ping Simulado
+		for _, f := range facturas {
+			// MOTOR DE SUMA ULTRA-FLEXIBLE: 
+			// Si tiene un valor positivo, lo contamos como venta. 
+			// Esto arregla el problema de las facturas con estado vacío.
+			if f.Total > 0 {
+				stats.TotalVentas += f.Total
+				
+				// También lo sumamos a la tendencia
+				day := f.FechaEmision.Format("2006-01-02")
+				trendMap[day] += f.Total
+			}
+	
+			// Para el conteo de pendientes, solo si el estado es algo fallido explícito
+			estado := strings.ToUpper(strings.TrimSpace(f.EstadoSRI))
+			if estado != "AUTORIZADO" && estado != "ANULADO" && estado != "" {
+				stats.Pendientes++
+			}
+		}
 	stats.SRIOnline = true
 
-	// 5. Tendencia (Adaptada al rango solicitado)
-	trendMap := make(map[string]float64)
-	var trendErr error
-	
-	go func() {
-		defer wg.Done()
-	
-		rows, err := db.GetDB().Table("facturas").
-			Select("date(fecha_emision) as date, SUM(total) as total").
-			Where("estado_sri = ?", "AUTORIZADO").
-			Where("fecha_emision BETWEEN ? AND ?", start, end).
-			Group("date").
-			Order("date ASC").
-			Rows()
-		
-		if err != nil {
-			trendErr = err
-			return
-		}
-		defer rows.Close()
-		
-		for rows.Next() {
-			var d string
-			var t float64
-			rows.Scan(&d, &t)
-			if len(d) >= 10 {
-				trendMap[d[:10]] = t
-			}
-		}
-	}()
-
-	wg.Wait()
-
-	if trendErr == nil {
-		// Generar puntos para cada día en el rango (Max 31 días para no saturar)
-		days := int(end.Sub(start).Hours() / 24)
-		if days > 31 { days = 31 }
-		if days < 1 { days = 7 } // Default a 7 si el rango es inválido
-
-		for i := 0; i <= days; i++ {
-			day := start.AddDate(0, 0, i).Format("2006-01-02")
-			val := 0.0
-			if v, ok := trendMap[day]; ok {
-				val = v
-			}
-			stats.SalesTrend = append(stats.SalesTrend, DailySale{Date: day, Total: val})
-		}
+	// Generar puntos de tendencia
+	days := int(end.Sub(start).Hours() / 24)
+	if days > 31 {
+		days = 31
+	}
+	for i := 0; i <= days; i++ {
+		day := start.AddDate(0, 0, i).Format("2006-01-02")
+		stats.SalesTrend = append(stats.SalesTrend, DailySale{Date: day, Total: trendMap[day]})
 	}
 
 	return stats
@@ -402,7 +361,7 @@ func (a *App) CreateInvoice(data db.FacturaDTO) string {
 	// 4. ENVIAR CORREO (SOLO SMTP LOCAL)
 	if data.ClienteEmail != "" && len(factura.PDFRIDE) > 0 {
 		config := a.GetEmisorConfig()
-		
+
 		go func(email, sec string, pdf []byte, conf *db.EmisorConfigDTO) {
 			// Validar configuración SMTP
 			if conf == nil || conf.SMTPHost == "" || conf.SMTPPort == 0 || conf.SMTPUser == "" {
@@ -416,9 +375,9 @@ func (a *App) CreateInvoice(data db.FacturaDTO) string {
 				User:     conf.SMTPUser,
 				Password: conf.SMTPPassword,
 			}
-			
+
 			err := a.mailService.SendInvoiceEmail(smtpConfig, email, conf.RazonSocial, pdf, sec)
-			
+
 			logEntry := db.MailLog{
 				FacturaClave: factura.ClaveAcceso,
 				Email:        email,
@@ -470,9 +429,9 @@ func (a *App) ResendInvoiceEmail(claveAcceso string) string {
 			User:     conf.SMTPUser,
 			Password: conf.SMTPPassword,
 		}
-		
+
 		err := a.mailService.SendInvoiceEmail(smtpConfig, email, conf.RazonSocial, pdf, sec)
-		
+
 		logEntry := db.MailLog{
 			FacturaClave: claveAcceso,
 			Email:        email,
@@ -498,7 +457,7 @@ func (a *App) ResendInvoiceEmail(claveAcceso string) string {
 func (a *App) GetMailLogs() []db.MailLogDTO {
 	var logs []db.MailLog
 	db.GetDB().Order("fecha desc").Limit(50).Find(&logs)
-	
+
 	var dtos []db.MailLogDTO
 	for _, l := range logs {
 		dtos = append(dtos, db.MailLogDTO{
@@ -585,7 +544,7 @@ func (a *App) GetBackups() []BackupDTO {
 		if !f.IsDir() && filepath.Ext(f.Name()) == ".zip" {
 			info, _ := f.Info()
 			sizeMB := float64(info.Size()) / 1024 / 1024
-			
+
 			backups = append(backups, BackupDTO{
 				Name: f.Name(),
 				Size: fmt.Sprintf("%.2f MB", sizeMB),
@@ -610,8 +569,12 @@ func (a *App) GetNextSecuencial() string {
 
 // GetFacturasPaginated devuelve el historial.
 func (a *App) GetFacturasPaginated(page int, pageSize int) FacturasResponse {
-	if page < 1 { page = 1 }
-	if pageSize < 1 { pageSize = 10 }
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
 	offset := (page - 1) * pageSize
 
 	var facturas []db.Factura
@@ -638,7 +601,7 @@ func (a *App) GetFacturasPaginated(page int, pageSize int) FacturasResponse {
 	for _, c := range clients {
 		clientMap[c.ID] = c.Nombre
 	}
-	
+
 	var resumenes []db.FacturaResumenDTO
 	for _, f := range facturas {
 		nombreCliente := f.ClienteID
@@ -794,22 +757,23 @@ func (a *App) GetEmisorConfig() *db.EmisorConfigDTO {
 	decryptedSMTP, _ := crypto.Decrypt(config.SMTPPassword)
 
 	return &db.EmisorConfigDTO{
-		RUC:          config.RUC,
-		RazonSocial:  config.RazonSocial,
-		P12Path:      config.P12Path,
-		P12Password:  decryptedPass,
-		Ambiente:     config.Ambiente,
-		Estab:        config.Estab,
-		PtoEmi:       config.PtoEmi,
-		Obligado:     config.Obligado,
+		RUC:                config.RUC,
+		RazonSocial:        config.RazonSocial,
+		P12Path:            config.P12Path,
+		P12Password:        decryptedPass,
+		Ambiente:           config.Ambiente,
+		Estab:              config.Estab,
+		PtoEmi:             config.PtoEmi,
+		Obligado:           config.Obligado,
 		ContribuyenteRimpe: config.ContribuyenteRimpe,
 		AgenteRetencion:    config.AgenteRetencion,
-		StoragePath:  config.StoragePath,
-		LogoPath:     config.LogoPath,
-		SMTPHost:     config.SMTPHost,
-		SMTPPort:     config.SMTPPort,
-		SMTPUser:     config.SMTPUser,
-		SMTPPassword: decryptedSMTP,
+		StoragePath:        config.StoragePath,
+		LogoPath:           config.LogoPath,
+		PDFTheme:           config.PDFTheme,
+		SMTPHost:           config.SMTPHost,
+		SMTPPort:           config.SMTPPort,
+		SMTPUser:           config.SMTPUser,
+		SMTPPassword:       decryptedSMTP,
 	}
 }
 
@@ -837,7 +801,7 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 
 	var existing db.EmisorConfig
 	result := db.GetDB().First(&existing)
-	
+
 	encryptedPass, err := crypto.Encrypt(dto.P12Password)
 	if err != nil {
 		return fmt.Sprintf("Error al cifrar contraseña firma: %v", err)
@@ -863,7 +827,8 @@ func (a *App) SaveEmisorConfig(dto db.EmisorConfigDTO) string {
 	existing.AgenteRetencion = dto.AgenteRetencion
 	existing.StoragePath = dto.StoragePath
 	existing.LogoPath = dto.LogoPath
-	
+	existing.PDFTheme = dto.PDFTheme
+
 	existing.SMTPHost = dto.SMTPHost
 	existing.SMTPPort = dto.SMTPPort
 	existing.SMTPUser = dto.SMTPUser
@@ -1071,9 +1036,13 @@ func (a *App) CreateQuotation(dto db.QuotationDTO) string {
 }
 
 func (a *App) GetQuotations(page, pageSize int) QuotationListResponse {
-	if page < 1 { page = 1 }
-	if pageSize < 1 { pageSize = 10 }
-	
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
 	dtos, total := a.quotationService.GetQuotations(page, pageSize)
 	return QuotationListResponse{Total: total, Data: dtos}
 }
@@ -1119,6 +1088,14 @@ func (a *App) ConvertQuotationToInvoice(id uint) *db.FacturaDTO {
 }
 
 // --- NUEVOS MÉTODOS (Fuzzy Search & Charts) ---
+
+func (a *App) GetVATSummary(startStr, endStr string) service.TaxSummary {
+	start, _ := time.Parse("2006-01-02", startStr)
+	end, _ := time.Parse("2006-01-02", endStr)
+	end = end.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+
+	return a.taxService.GetVATSummary(start, end)
+}
 
 func (a *App) SearchInvoicesSmart(query string) []db.FacturaResumenDTO {
 	res, err := a.searchService.FuzzySearchInvoices(query)

@@ -19,6 +19,7 @@
         Obligado: false,
         StoragePath: "",
         LogoPath: "",
+        PDFTheme: "modern",
         SMTPHost: "",
         SMTPPort: 587,
         SMTPUser: "",
@@ -171,6 +172,19 @@
                     {/if}
                     <button class="btn-secondary" on:click={handleSelectLogo}>📷 Cambiar Logo</button>
                 </div>
+            </div>
+
+            <!-- Tema PDF -->
+            <div class="field">
+                <label for="cfg-theme">Diseño de Factura PDF</label>
+                <select id="cfg-theme" bind:value={config.PDFTheme}>
+                    <option value="modern">✨ Moderno (Color Esmeralda)</option>
+                    <option value="minimal">🖨️ Minimalista (Ahorro Tinta)</option>
+                    <option value="corporate">🏢 Corporativo (Formal B/N)</option>
+                </select>
+                <p class="text-caption text-secondary mt-1">
+                    Seleccione el estilo visual para los documentos generados.
+                </p>
             </div>
 
             <!-- Certificado -->

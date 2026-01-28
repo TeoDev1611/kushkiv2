@@ -5,6 +5,7 @@
     import { notifications } from '$lib/stores/notifications';
     import { withLoading } from '$lib/stores/app';
     import type { db } from 'wailsjs/go/models';
+    import * as WailsApp from 'wailsjs/go/main/App';
 
     // Tipos locales si no están completos en el modelo
     interface ClientUI extends db.ClientDTO {
@@ -43,10 +44,23 @@
 
     async function loadClients() {
         try {
-            clients = await withLoading(Backend.getClients()) || [];
+            if (search.length > 2) {
+                // Usar búsqueda backend
+                clients = await withLoading(WailsApp.SearchClients(search)) || [];
+            } else {
+                clients = await withLoading(Backend.getClients()) || [];
+            }
         } catch (e) {
             notifications.show("Error cargando clientes: " + e, "error");
         }
+    }
+
+    let searchTimeout: any;
+    function handleSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            loadClients();
+        }, 300);
     }
 
     function resetForm() {
@@ -103,19 +117,12 @@
             notifications.show("Error eliminando: " + e, "error");
         }
     }
-
-    // Filtrado reactivo
-    $: filteredClients = clients.filter(c => 
-        c.Nombre.toLowerCase().includes(search.toLowerCase()) || 
-        c.ID.includes(search)
-    );
 </script>
 
 <div class="panel full-height" in:fade={{ duration: 200 }}>
     <div class="header-row">
         <h1>Directorio de Clientes</h1>
         <div style="flex: 1"></div> 
-        <!-- Espacio flexible -->
     </div>
 
     <div class="master-detail-layout">
@@ -129,7 +136,7 @@
             <div class="sidebar-content">
                 <div class="field">
                     <label for="c-id">Identificación (RUC/Cédula)</label>
-                    <input id="c-id" bind:value={editingClient.ID} placeholder="099..." disabled={isEditing && false} />
+                    <input id="c-id" bind:value={editingClient.ID} placeholder="099..." disabled={isEditing} />
                 </div>
 
                 <div class="field">
@@ -169,6 +176,7 @@
             <div class="search-bar p-3 border-bottom">
                 <input 
                     bind:value={search} 
+                    on:input={handleSearch}
                     placeholder="🔍 Buscar por nombre o RUC..." 
                     style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-subtle);"
                 />
@@ -179,12 +187,14 @@
                 <div class="linear-header grid-columns-clients">
                     <div class="cell">ID</div>
                     <div class="cell">Nombre</div>
-                    <div class="cell">Contacto</div>
+                    <div class="cell">Email</div>
+                    <div class="cell">Dirección</div>
+                    <div class="cell">Teléfono</div>
                     <div class="cell text-center">Acciones</div>
                 </div>
                 
                 <div class="rows-container overflow-auto flex-1">
-                    {#each filteredClients as c}
+                    {#each clients as c}
                         <div 
                             class="linear-row grid-columns-clients" 
                             role="button"
@@ -195,10 +205,15 @@
                         >
                             <div class="cell mono text-secondary">{c.ID}</div>
                             <div class="cell font-medium">{c.Nombre}</div>
-                            <div class="cell text-muted text-small">
-                                {c.Email || c.Telefono || "-"}
-                            </div>
+                            <div class="cell text-small">{c.Email || "-"}</div>
+                            <div class="cell text-small text-truncate">{c.Direccion || "-"}</div>
+                            <div class="cell text-small">{c.Telefono || "-"}</div>
+                            
                             <div class="cell text-center actions-cell">
+                                <button class="btn-icon-mini" 
+                                    on:click|stopPropagation={() => selectClient(c)}
+                                    title="Editar"
+                                >✏️</button>
                                 <button class="btn-icon-mini danger" 
                                     on:click|stopPropagation={() => handleDelete(c.ID)}
                                     title="Eliminar Cliente"
@@ -208,7 +223,7 @@
                         </div>
                     {/each}
                     
-                    {#if filteredClients.length === 0}
+                    {#if clients.length === 0}
                         <div class="empty-state">
                             <div class="empty-state-icon">👥</div>
                             <p class="empty-state-text">
@@ -228,7 +243,8 @@
         display: grid;
         grid-template-columns: 350px 1fr;
         gap: 24px;
-        height: calc(100vh - 140px); /* Ajuste aproximado para el header */
+        flex: 1;
+        min-height: 0;
     }
 
     .flex-col { display: flex; flex-direction: column; }
@@ -240,14 +256,30 @@
 
     .grid-columns-clients {
         display: grid;
-        grid-template-columns: 140px 1fr 180px 80px;
+        grid-template-columns: 110px 1fr 180px 180px 100px 90px;
         align-items: center;
         padding: 0 16px;
     }
 
-    .text-small { font-size: 0.85rem; }
+    .text-small { font-size: 0.85rem; color: var(--text-secondary); }
+    .text-truncate {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 
     /* Responsive: Stack en pantallas pequeñas */
+    @media (max-width: 1200px) {
+        .grid-columns-clients {
+            grid-template-columns: 110px 1fr 140px 90px;
+        }
+        /* Ocultar dirección y teléfono en pantallas medianas */
+        .grid-columns-clients > :nth-child(4),
+        .grid-columns-clients > :nth-child(5) {
+            display: none;
+        }
+    }
+
     @media (max-width: 1000px) {
         .master-detail-layout {
             grid-template-columns: 1fr;

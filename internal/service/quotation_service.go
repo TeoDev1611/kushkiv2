@@ -172,7 +172,7 @@ func (s *QuotationService) GetPDF(id uint) ([]byte, error) {
 
 func (s *QuotationService) ConvertToInvoice(id uint) (*db.FacturaDTO, error) {
 	var q db.Quotation
-	if err := db.GetDB().Preload("Items").First(&q, id).Error; err != nil {
+	if err := db.GetDB().First(&q, id).Error; err != nil {
 		return nil, err
 	}
 	

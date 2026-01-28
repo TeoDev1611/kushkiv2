@@ -5,9 +5,13 @@
     import { notifications } from '$lib/stores/notifications';
     import { withLoading } from '$lib/stores/app';
     import type { db } from 'wailsjs/go/models';
+    import * as WailsApp from 'wailsjs/go/main/App';
 
     // Estado local
     let products: db.ProductDTO[] = [];
+    let searchTerm = "";
+    let sortCol: keyof db.ProductDTO = "Name";
+    let sortAsc = true;
     let isEditing = false;
     let editingProduct: any = {
         SKU: "",
@@ -19,13 +23,9 @@
     };
 
     // Handler para evento global de guardado (Ctrl+S)
-    // Solo guarda si hay datos válidos en el formulario
     const handleGlobalSave = () => {
         if (editingProduct.SKU && editingProduct.Name) {
             handleSave();
-        } else {
-            // Opcional: Feedback si intenta guardar vacío
-            // notifications.show("Complete el formulario para guardar", "info");
         }
     };
 
@@ -40,11 +40,49 @@
 
     async function loadProducts() {
         try {
-            products = await withLoading(Backend.getProducts()) || [];
+            if (searchTerm.length > 2) {
+                products = await withLoading(WailsApp.SearchProducts(searchTerm)) || [];
+            } else {
+                products = await withLoading(Backend.getProducts()) || [];
+            }
         } catch (e) {
             notifications.show("Error cargando inventario: " + e, "error");
         }
     }
+
+    let searchTimeout: any;
+    function handleSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            loadProducts();
+        }, 300);
+    }
+
+    function sort(col: keyof db.ProductDTO) {
+        if (sortCol === col) {
+            sortAsc = !sortAsc;
+        } else {
+            sortCol = col;
+            sortAsc = true;
+        }
+    }
+
+    $: sortedProducts = [...products].sort((a: any, b: any) => {
+        let valA = a[sortCol];
+        let valB = b[sortCol];
+        
+        // Manejo numérico
+        if (typeof valA === 'number' && typeof valB === 'number') {
+            return sortAsc ? valA - valB : valB - valA;
+        }
+        
+        // Manejo string
+        valA = String(valA).toLowerCase();
+        valB = String(valB).toLowerCase();
+        if (valA < valB) return sortAsc ? -1 : 1;
+        if (valA > valB) return sortAsc ? 1 : -1;
+        return 0;
+    });
 
     function resetForm() {
         editingProduct = {
@@ -72,6 +110,7 @@
         try {
             // Asegurar tipos numéricos
             editingProduct.Price = parseFloat(String(editingProduct.Price));
+            editingProduct.Stock = parseInt(String(editingProduct.Stock));
             
             const res = await withLoading(Backend.saveProduct(editingProduct));
             
@@ -113,7 +152,6 @@
 <div class="panel full-height" in:fade={{ duration: 200 }}>
     <div class="header-row">
         <h1>Inventario de Productos</h1>
-        <div style="flex: 1"></div>
     </div>
 
     <div class="master-detail-layout">
@@ -121,7 +159,7 @@
         <div class="sidebar-form card">
             <div class="form-header flex-row space-between">
                 <h3>{isEditing ? "Editar Producto" : "Nuevo Producto"}</h3>
-                <button class="btn-icon-mini" on:click={resetForm}>✨</button>
+                <button class="btn-icon-mini" on:click={resetForm} title="Nuevo">✨</button>
             </div>
             
             <div class="sidebar-content">
@@ -156,6 +194,11 @@
                         </select>
                     </div>
                 </div>
+
+                <div class="field">
+                    <label for="p-stock">Stock Inicial</label>
+                    <input id="p-stock" type="number" bind:value={editingProduct.Stock} />
+                </div>
             </div>
 
             <div class="sidebar-footer mt-4">
@@ -170,16 +213,33 @@
 
         <!-- LISTA -->
         <div class="card no-padding flex-col">
+            <!-- Search Bar -->
+            <div class="p-3 border-bottom">
+                <input 
+                    bind:value={searchTerm} 
+                    on:input={handleSearch}
+                    placeholder="🔍 Buscar producto por nombre o SKU..." 
+                    style="width: 100%;"
+                />
+            </div>
+
             <div class="linear-grid flex-1 overflow-hidden flex-col">
                 <div class="linear-header grid-columns-products">
-                    <div class="cell">SKU</div>
-                    <div class="cell">Descripción</div>
-                    <div class="cell text-right">Precio</div>
+                    <button class="cell header-btn sortable" on:click={() => sort('SKU')}>
+                        SKU {sortCol === 'SKU' ? (sortAsc ? '↑' : '↓') : ''}
+                    </button>
+                    <button class="cell header-btn sortable" on:click={() => sort('Name')}>
+                        Descripción {sortCol === 'Name' ? (sortAsc ? '↑' : '↓') : ''}
+                    </button>
+                    <div class="cell text-center">IVA %</div>
+                    <button class="cell header-btn sortable text-right" on:click={() => sort('Price')}>
+                        Precio {sortCol === 'Price' ? (sortAsc ? '↑' : '↓') : ''}
+                    </button>
                     <div class="cell text-center">Acciones</div>
                 </div>
                 
                 <div class="rows-container overflow-auto flex-1">
-                    {#each products as p}
+                    {#each sortedProducts as p}
                         <div 
                             class="linear-row grid-columns-products" 
                             role="button"
@@ -190,8 +250,13 @@
                         >
                             <div class="cell mono text-secondary">{p.SKU}</div>
                             <div class="cell">{p.Name}</div>
+                            <div class="cell text-center text-secondary">{p.TaxPercentage}%</div>
                             <div class="cell text-right font-medium text-mint">${p.Price.toFixed(2)}</div>
                             <div class="cell text-center actions-cell">
+                                <button class="btn-icon-mini" 
+                                    on:click|stopPropagation={() => selectProduct(p)}
+                                    title="Editar"
+                                >✏️</button>
                                 <button class="btn-icon-mini danger" 
                                     on:click|stopPropagation={() => handleDelete(p.SKU)}
                                     title="Eliminar"
@@ -200,10 +265,10 @@
                         </div>
                     {/each}
                     
-                    {#if products.length === 0}
+                    {#if sortedProducts.length === 0}
                         <div class="empty-state">
                             <div class="empty-state-icon">📦</div>
-                            <p class="empty-state-text">Tu inventario está vacío.</p>
+                            <p class="empty-state-text">No se encontraron productos.</p>
                         </div>
                     {/if}
                 </div>
@@ -217,7 +282,8 @@
         display: grid;
         grid-template-columns: 320px 1fr;
         gap: 24px;
-        height: calc(100vh - 140px);
+        flex: 1;
+        min-height: 0;
     }
     
     .flex-col { display: flex; flex-direction: column; }
@@ -228,10 +294,29 @@
     
     .grid-columns-products {
         display: grid;
-        grid-template-columns: 120px 1fr 100px 80px;
+        grid-template-columns: 120px 1fr 80px 100px 100px;
         align-items: center;
         padding: 0 16px;
     }
+
+    .header-btn {
+        background: none;
+        border: none;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+    }
+
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { color: var(--text-primary); }
+
+    .p-3 { padding: 16px; }
+    .border-bottom { border-bottom: 1px solid var(--border-subtle); }
     
     @media (max-width: 900px) {
         .master-detail-layout {

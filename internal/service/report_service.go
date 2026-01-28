@@ -81,13 +81,16 @@ type TopProduct struct {
 	Total    float64 `json:"total"`
 }
 
-// GetTopProducts obtiene los productos más vendidos (Basado en el historial de facturas).
+// GetTopProducts obtiene los productos más vendidos (Basado en facturas con valor).
 func (s *ReportService) GetTopProducts(limit int) ([]TopProduct, error) {
 	var results []TopProduct
 	
-	err := db.GetDB().Model(&db.FacturaItem{}).
-		Select("producto_sku as sku, nombre, SUM(cantidad) as quantity, SUM(subtotal) as total").
-		Group("producto_sku, nombre").
+	// Usamos alias explícitos para que coincidan con los tags JSON: sku, name, quantity, total
+	err := db.GetDB().Table("factura_items").
+		Select("factura_items.producto_sku as sku, factura_items.nombre as name, SUM(factura_items.cantidad) as quantity, SUM(factura_items.subtotal) as total").
+		Joins("JOIN facturas ON facturas.clave_acceso = factura_items.factura_clave").
+		Where("facturas.total > 0").
+		Group("factura_items.producto_sku, factura_items.nombre").
 		Order("quantity DESC").
 		Limit(limit).
 		Scan(&results).Error

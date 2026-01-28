@@ -13,6 +13,9 @@ export const Backend = {
     async getTopProducts(): Promise<any[]> { // Ajustar tipo si existe DTO
          return await WailsApp.GetTopProducts();
     },
+    async getVATSummary(start: string, end: string): Promise<any> {
+        return await WailsApp.GetVATSummary(start, end);
+    },
     async getFacturasPaginated(page: number, pageSize: number): Promise<main.FacturasResponse> {
         return await WailsApp.GetFacturasPaginated(page, pageSize);
     },

@@ -4,26 +4,7 @@ import (
 	"kushkiv2/internal/db"
 	"testing"
 	"time"
-
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
-
-// setupTestDB configura una base de datos en memoria para testing.
-func setupTestDB() *gorm.DB {
-	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		panic("failed to connect database")
-	}
-
-	// Inyectar la DB de prueba
-	db.SetDB(database)
-
-	// Correr migraciones
-	db.Migrate(database)
-
-	return database
-}
 
 func TestGetNextSecuencial(t *testing.T) {
 	database := setupTestDB()

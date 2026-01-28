@@ -37,6 +37,7 @@ export namespace db {
 	    AgenteRetencion: string;
 	    StoragePath: string;
 	    LogoPath: string;
+	    PDFTheme: string;
 	    SMTPHost: string;
 	    SMTPPort: number;
 	    SMTPUser: string;
@@ -62,6 +63,7 @@ export namespace db {
 	        this.AgenteRetencion = source["AgenteRetencion"];
 	        this.StoragePath = source["StoragePath"];
 	        this.LogoPath = source["LogoPath"];
+	        this.PDFTheme = source["PDFTheme"];
 	        this.SMTPHost = source["SMTPHost"];
 	        this.SMTPPort = source["SMTPPort"];
 	        this.SMTPUser = source["SMTPUser"];
@@ -465,6 +467,28 @@ export namespace service {
 	        this.detail = source["detail"];
 	        this.request = source["request"];
 	        this.response = source["response"];
+	    }
+	}
+	export class TaxSummary {
+	    ventas15: number;
+	    ventas0: number;
+	    ivaGenerado: number;
+	    retencionesIva: number;
+	    factorProporcion: number;
+	    impuestoSugerido: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaxSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ventas15 = source["ventas15"];
+	        this.ventas0 = source["ventas0"];
+	        this.ivaGenerado = source["ivaGenerado"];
+	        this.retencionesIva = source["retencionesIva"];
+	        this.factorProporcion = source["factorProporcion"];
+	        this.impuestoSugerido = source["impuestoSugerido"];
 	    }
 	}
 	export class TopProduct {

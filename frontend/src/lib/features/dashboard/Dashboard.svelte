@@ -11,12 +11,14 @@
         totalVentas: 0,
         totalFacturas: 0,
         pendientes: 0,
-        sriOnline: false, // Default false para evitar falsos positivos
+        sriOnline: false,
         salesTrend: [],
     };
     let topProducts: any[] = [];
     let dashboardCharts = { revenueBar: "", clientsPie: "" };
+    let taxSummary = { ventas15: 0, ventas0: 0, ivaGenerado: 0, retencionesIva: 0, factorProporcion: 1, impuestoSugerido: 0 };
     let recentActivity: any[] = [];
+    let emisorConfig: any = null;
     let loading = true;
     
     // Configuración de fechas (Mes actual por defecto)
@@ -30,44 +32,35 @@
     async function loadDashboardData() {
         loading = true;
         try {
-            // Cargar en paralelo pero manejar fallos individuales si es necesario
-            // Usamos Promise.allSettled para mayor robustez si un servicio falla
-            const [kpiRes, chartsRes, topProdRes, facturasRes] = await Promise.allSettled([
+            const [kpiRes, chartsRes, topProdRes, facturasRes, taxRes, confRes] = await Promise.allSettled([
                 Backend.getDashboardStats(dateRange.start, dateRange.end),
                 Backend.getCharts(),
                 Backend.getTopProducts(),
-                Backend.getFacturasPaginated(1, 5)
+                Backend.getFacturasPaginated(1, 8), // Pedimos un poco más para llenar la tabla
+                Backend.getVATSummary(dateRange.start, dateRange.end),
+                Backend.getConfig()
             ]);
 
-            // Procesar KPIs
-            if (kpiRes.status === 'fulfilled') {
-                stats = kpiRes.value;
-            } else {
-                console.error("Error loading KPIs", kpiRes.reason);
-                notifications.show("Error cargando estadísticas", "error");
-            }
-
-            // Procesar Gráficos
-            if (chartsRes.status === 'fulfilled') {
-                dashboardCharts = chartsRes.value || { revenueBar: "", clientsPie: "" };
-            }
-
-            // Procesar Top Productos
-            if (topProdRes.status === 'fulfilled') {
-                topProducts = topProdRes.value || [];
-            }
-
-            // Procesar Actividad
-            if (facturasRes.status === 'fulfilled') {
-                recentActivity = facturasRes.value?.data || [];
-            }
+            if (kpiRes.status === 'fulfilled') stats = kpiRes.value;
+            if (chartsRes.status === 'fulfilled') dashboardCharts = chartsRes.value || { revenueBar: "", clientsPie: "" };
+            if (topProdRes.status === 'fulfilled') topProducts = topProdRes.value || [];
+            if (facturasRes.status === 'fulfilled') recentActivity = facturasRes.value?.data || [];
+            if (taxRes.status === 'fulfilled') taxSummary = taxRes.value;
+            if (confRes.status === 'fulfilled') emisorConfig = confRes.value;
 
         } catch (e) {
             console.error(e);
-            notifications.show("Error general en dashboard: " + e, "error");
+            notifications.show("Error cargando dashboard: " + e, "error");
         } finally {
             loading = false;
         }
+    }
+
+    function getDeadline(ruc: string) {
+        if (!ruc || ruc.length < 9) return "--";
+        const ninth = parseInt(ruc[8]);
+        const day = ninth === 0 ? 28 : (ninth * 2) + 8;
+        return `${day} del próximo mes`;
     }
 
     function navigateToHistory() {
@@ -80,38 +73,28 @@
 </script>
 
 <div class="panel" in:fade={{ duration: 200 }}>
-    <!-- Header -->
+    <!-- Header Minimalista -->
     <div class="header-row">
         <div>
-            <h1>Resumen General</h1>
-            <p class="subtitle">Métricas clave del periodo</p>
+            <h1>Dashboard</h1>
+            <p class="subtitle text-secondary">Control de ventas y obligaciones SRI</p>
         </div>
         <div class="header-actions">
-            <div class="input-group flex-row" style="gap: 8px; background: var(--bg-surface); padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border-subtle);">
-                <input
-                    type="date"
-                    bind:value={dateRange.start}
-                    style="border: none; background: transparent; padding: 6px; width: auto;"
-                    title="Fecha Inicio"
-                />
-                <span style="color: var(--text-tertiary);">-</span>
-                <input
-                    type="date"
-                    bind:value={dateRange.end}
-                    style="border: none; background: transparent; padding: 6px; width: auto;"
-                    title="Fecha Fin"
-                />
+            <div class="date-selector-group flex-row">
+                <input type="date" bind:value={dateRange.start} on:change={loadDashboardData} />
+                <span class="text-muted">al</span>
+                <input type="date" bind:value={dateRange.end} on:change={loadDashboardData} />
             </div>
-            <button class="btn-secondary" on:click={loadDashboardData} title="Actualizar Datos">🔄</button>
+            <button class="btn-secondary" on:click={loadDashboardData} title="Refrescar">🔄</button>
         </div>
     </div>
 
     {#if loading}
-        <div class="flex-row text-center" style="justify-content: center; padding: 40px;">
+        <div class="flex-row text-center" style="justify-content: center; padding: 100px;">
             <div class="loader-premium"></div>
         </div>
     {:else}
-        <!-- KPIs -->
+        <!-- Fila 1: KPIs Esenciales -->
         <div class="kpi-row">
             <div class="kpi-card">
                 <div class="kpi-icon mint">💰</div>
@@ -123,7 +106,7 @@
             <div class="kpi-card">
                 <div class="kpi-icon blue">📄</div>
                 <div class="kpi-content">
-                    <div class="title">Facturas</div>
+                    <div class="title">Facturas Emitidas</div>
                     <div class="value">{stats.totalFacturas || 0}</div>
                 </div>
             </div>
@@ -139,116 +122,194 @@
                     {stats.sriOnline ? "🌐" : "🔌"}
                 </div>
                 <div class="kpi-content">
-                    <div class="title">Estado SRI</div>
+                    <div class="title">Servidor SRI</div>
                     <div class="flex-row">
                         <span class="status-dot {stats.sriOnline ? 'AUTORIZADO' : 'PENDIENTE'}"></span>
-                        <span style="font-size: 14px; font-weight: 500;">{stats.sriOnline ? "Online" : "Offline"}</span>
+                        <span style="font-weight: 600;">{stats.sriOnline ? "En Línea" : "Offline"}</span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="dashboard-layout mt-4" style="display: flex; flex-direction: column; gap: 24px;">
-            <!-- Gráficos & Top Productos -->
-            <div class="charts-row" style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
-                <div class="section-chart card" style="min-height: 350px;">
-                    {#if dashboardCharts.revenueBar || dashboardCharts.clientsPie}
-                        <div class="chart-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; height: 100%;">
-                            <div class="chart-box">
-                                <ChartFrame htmlContent={dashboardCharts.revenueBar} />
+        <div class="dashboard-grid-main mt-4">
+            
+            <!-- COLUMNA IZQUIERDA: Guía Fiscal y Gráfico -->
+            <div class="left-stack">
+                <!-- GUÍA FISCAL -->
+                <div class="tax-card card">
+                    <div class="flex-row space-between mb-4">
+                        <h3 class="m-0">📋 Guía Formulario 104</h3>
+                        {#if emisorConfig}
+                            <div class="deadline-badge">
+                                📅 Declara hasta: <strong>{getDeadline(emisorConfig.RUC)}</strong>
                             </div>
-                            <div class="chart-box">
-                                <ChartFrame htmlContent={dashboardCharts.clientsPie} />
-                            </div>
+                        {/if}
+                    </div>
+
+                    <div class="tax-grid">
+                        <div class="tax-item">
+                            <span class="tax-label">Ventas 15% (Cas. 401)</span>
+                            <span class="tax-value">${taxSummary.ventas15.toFixed(2)}</span>
                         </div>
-                    {:else}
-                        <div class="empty-state" style="border:none; background:none;">
-                            <p>No hay datos suficientes para gráficos</p>
+                        <div class="tax-item">
+                            <span class="tax-label">IVA Cobrado (Cas. 411)</span>
+                            <span class="tax-value text-mint">${taxSummary.ivaGenerado.toFixed(2)}</span>
                         </div>
-                    {/if}
+                        <div class="tax-item">
+                            <span class="tax-label">Retenciones (Cas. 609)</span>
+                            <span class="tax-value text-orange">${taxSummary.retencionesIva.toFixed(2)}</span>
+                        </div>
+                        <div class="tax-item highlight">
+                            <span class="tax-label">Sugerido a Pagar</span>
+                            <span class="tax-value">${taxSummary.impuestoSugerido.toFixed(2)}</span>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="card compact">
-                    <h3>🏆 Top Productos</h3>
+                <!-- GRÁFICO TOP CLIENTES -->
+                <div class="card" style="flex: 1; min-height: 380px; padding: 10px;">
+                    <ChartFrame htmlContent={dashboardCharts.clientsPie} />
+                </div>
+            </div>
+
+            <!-- COLUMNA DERECHA: Productos y Actividad -->
+            <div class="right-stack">
+                <!-- TOP PRODUCTOS -->
+                <div class="card compact mb-4">
+                    <h3 class="mb-3">🏆 Productos Estrella</h3>
                     <div class="linear-list">
-                        {#each topProducts.slice(0, 5) as p}
+                        {#each topProducts.slice(0, 4) as p}
                             <div class="linear-item">
-                                <div class="item-info" style="flex:1">{p.name}</div>
-                                <div class="item-value">{p.quantity} un.</div>
+                                <div style="flex:1">
+                                    <div class="font-bold">{p.name}</div>
+                                    <div class="text-xs text-muted">{p.sku}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-mint font-bold">{p.quantity} un.</div>
+                                    <div class="text-xs text-secondary">${(p.total || 0).toFixed(2)}</div>
+                                </div>
                             </div>
                         {/each}
                         {#if topProducts.length === 0}
-                            <div class="empty-state-text" style="padding: 20px;">Sin datos</div>
+                            <p class="empty-text">Sin ventas registradas</p>
+                        {/if}
+                    </div>
+                </div>
+
+                <!-- ACTIVIDAD RECIENTE -->
+                <div class="card flex-1 no-padding overflow-hidden flex-col">
+                    <div class="p-4 flex-row space-between border-bottom">
+                        <h3 class="m-0">⚡ Últimos Movimientos</h3>
+                        <button class="btn-icon-mini" on:click={navigateToHistory} title="Ver todo">➡</button>
+                    </div>
+                    <div class="linear-grid">
+                        {#each recentActivity as f}
+                            <div class="linear-row compact-row">
+                                <div class="cell">
+                                    <span class="badge {f.estado}" style="zoom: 0.8;">{f.estado}</span>
+                                </div>
+                                <div class="cell" style="flex: 1;">
+                                    <div class="font-medium text-truncate" style="max-width: 120px;">{f.cliente}</div>
+                                    <div class="text-xs mono text-muted">{f.secuencial}</div>
+                                </div>
+                                <div class="cell text-right font-bold text-mint">${(f.total || 0).toFixed(2)}</div>
+                            </div>
+                        {/each}
+                        {#if recentActivity.length === 0}
+                            <p class="p-4 text-center text-muted">No hay facturas este mes</p>
                         {/if}
                     </div>
                 </div>
             </div>
 
-            <!-- Actividad Reciente -->
-            <div class="card">
-                <div class="flex-row space-between mb-4">
-                    <h3>⚡ Actividad Reciente</h3>
-                    <button class="btn-secondary" on:click={navigateToHistory}>Ver Historial Completo</button>
-                </div>
-                <div class="linear-grid">
-                    <div class="linear-header grid-columns-activity" style="grid-template-columns: 100px 140px 1fr 120px;">
-                        <div class="cell">Estado</div>
-                        <div class="cell">Secuencial</div>
-                        <div class="cell">Cliente</div>
-                        <div class="cell text-right">Total</div>
-                    </div>
-                    <div class="rows-container">
-                        {#each recentActivity as f}
-                            <div class="linear-row grid-columns-activity" style="grid-template-columns: 100px 140px 1fr 120px;">
-                                <div class="cell">
-                                    <span class="badge {f.estado}">{f.estado}</span>
-                                </div>
-                                <div class="cell mono text-muted">{f.secuencial}</div>
-                                <div class="cell">{f.cliente}</div>
-                                <div class="cell text-right font-medium">${(f.total || 0).toFixed(2)}</div>
-                            </div>
-                        {/each}
-                        {#if recentActivity.length === 0}
-                            <div class="empty-state-text" style="padding: 40px; text-align: center;">No hay actividad reciente</div>
-                        {/if}
-                    </div>
-                </div>
-            </div>
         </div>
     {/if}
 </div>
 
 <style>
-    /* Estilos específicos que no estén en style.css global */
-    .linear-list {
+    .dashboard-grid-main {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 24px;
+        align-items: start;
+    }
+
+    .left-stack, .right-stack {
         display: flex;
         flex-direction: column;
+        gap: 24px;
     }
+
+    .right-stack {
+        height: 100%;
+    }
+
+    .date-selector-group {
+        background: var(--bg-surface);
+        padding: 4px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border-subtle);
+    }
+    
+    .date-selector-group input {
+        border: none;
+        background: transparent;
+        width: auto;
+        padding: 4px;
+        font-size: 13px;
+    }
+
+    .tax-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .tax-item {
+        padding: 14px;
+        background: rgba(255,255,255,0.03);
+        border-radius: 12px;
+        border: 1px solid var(--border-subtle);
+    }
+    
+    .tax-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px; }
+    .tax-value { font-size: 18px; font-weight: 800; }
+    .tax-item.highlight { background: rgba(52, 211, 153, 0.05); border-color: var(--mint-border); }
+
+    .deadline-badge {
+        font-size: 11px;
+        padding: 4px 12px;
+        background: var(--bg-hover);
+        border-radius: 99px;
+        border: 1px solid var(--border-medium);
+    }
+
+    .compact-row {
+        grid-template-columns: auto 1fr auto;
+        padding: 8px 16px;
+    }
+
+    .text-truncate {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .m-0 { margin: 0; }
+    .p-4 { padding: 16px; }
+    .border-bottom { border-bottom: 1px solid var(--border-subtle); }
     .linear-item {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 12px 0;
+        padding: 10px 0;
         border-bottom: 1px solid var(--border-subtle);
     }
     .linear-item:last-child { border-bottom: none; }
-    
-    .status-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        display: block;
-        margin-right: 6px;
-    }
-    .status-dot.AUTORIZADO {
-        background: var(--status-success);
-        box-shadow: 0 0 8px rgba(0, 255, 148, 0.4);
-    }
-    .status-dot.PENDIENTE { background: var(--status-warning); }
+    .empty-text { padding: 20px; text-align: center; color: var(--text-tertiary); font-style: italic; }
 
-    /* Responsive Charts */
     @media (max-width: 1100px) {
-        .charts-row { grid-template-columns: 1fr !important; }
-        .chart-container { grid-template-columns: 1fr !important; }
+        .dashboard-grid-main {
+            grid-template-columns: 1fr;
+        }
     }
 </style>

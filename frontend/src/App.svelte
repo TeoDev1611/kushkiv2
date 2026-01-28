@@ -76,6 +76,14 @@
         }
     }
 
+    // Elemento de referencia para resetear scroll
+    let contentArea: HTMLElement;
+
+    // Resetear scroll cuando cambie la pestaña activa
+    activeTab.subscribe(() => {
+        if (contentArea) contentArea.scrollTop = 0;
+    });
+
     onMount(async () => {
         try {
             const licensed = await Backend.checkLicense();
@@ -165,7 +173,7 @@
         <div class="layout-container">
             <Sidebar />
             
-            <section class="content-area">
+            <section class="content-area" bind:this={contentArea}>
                 {#if $activeTab === 'dashboard'}
                     <Dashboard />
                 {:else if $activeTab === 'invoice'}
@@ -217,9 +225,11 @@
     .content-area {
         flex: 1;
         min-width: 0; /* CRÍTICO: Permite que el flex item se encoja correctamente */
-        overflow-y: auto; 
+        overflow: hidden; 
         padding: 24px;
         position: relative;
+        display: flex;
+        flex-direction: column;
     }
 
     /* License Overlay */

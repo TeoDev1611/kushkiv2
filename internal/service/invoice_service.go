@@ -407,7 +407,7 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 
 	// 9. Generar RIDE (PDF) si no hubo error fatal técnico (Offline sí genera PDF)
 	if facturaDB.EstadoSRI != "ERROR_TECNICO" {
-		pdfBytes, errPdf := pdf.GenerarRIDE(*facturaXML, config.LogoPath)
+		pdfBytes, errPdf := pdf.GenerarRIDE(*facturaXML, config.LogoPath, config.PDFTheme)
 		if errPdf != nil {
 			logger.Error("Error generando RIDE: %v", errPdf)
 		} else {
