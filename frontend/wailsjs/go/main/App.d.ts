@@ -20,6 +20,8 @@ export function DeleteClient(arg1:string):Promise<string>;
 
 export function DeleteProduct(arg1:string):Promise<string>;
 
+export function ExportMasterReport():Promise<string>;
+
 export function ExportSalesExcel(arg1:string,arg2:string):Promise<string>;
 
 export function GetBackups():Promise<Array<main.BackupDTO>>;
@@ -49,6 +51,10 @@ export function GetSyncLogs():Promise<Array<service.SyncLog>>;
 export function GetTopProducts():Promise<Array<service.TopProduct>>;
 
 export function GetVATSummary(arg1:string,arg2:string):Promise<service.TaxSummary>;
+
+export function ImportClientsCSV():Promise<string>;
+
+export function ImportProductsCSV():Promise<string>;
 
 export function NotifyFrontend(arg1:string,arg2:string):Promise<void>;
 

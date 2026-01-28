@@ -28,7 +28,7 @@
 ## 🚀 Mantenimiento Futuro (Post-Entrega)
 
 ### Testing & QA
-- [ ] **Cobertura:** Tests unitarios para servicios Core (`Quotation`, `Search`, `Chart`).
-- [ ] **Integración:** Validar flujos completos (Cotización -> Factura).
-- [ ] **Importador Masivo:** Permitir carga de productos desde CSV.
+- [x] **Cobertura:** Tests unitarios para servicios Core (`Quotation`, `Search`, `Chart`, `Product`).
+- [x] **Integración:** Validar flujos completos (Cotización -> Factura).
+- [x] **Importador Masivo:** Permitir carga de productos desde CSV.
 - [ ] **Multi-empresa:** Soporte para gestionar múltiples RUCs en la misma instalación.

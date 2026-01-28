@@ -74,6 +74,117 @@ func (s *ReportService) GenerateSalesExcel(startDate, endDate time.Time) ([]byte
 	return buf.Bytes(), nil
 }
 
+// GenerateMasterReportExcel genera un reporte consolidado de todo el sistema.
+func (s *ReportService) GenerateMasterReportExcel() ([]byte, error) {
+	f := excelize.NewFile()
+	defer f.Close()
+
+	// 0. HOJA DE RESUMEN
+	sheetRes := "Resumen General"
+	f.SetSheetName("Sheet1", sheetRes)
+	
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
+		Fill: excelize.Fill{Type: "pattern", Color: []string{"34D399"}, Pattern: 1},
+	})
+
+	f.SetCellValue(sheetRes, "A1", "Métrica")
+	f.SetCellValue(sheetRes, "B1", "Valor")
+	f.SetCellStyle(sheetRes, "A1", "B1", headerStyle)
+
+	var totalVentas float64
+	var countFacturas int64
+	var countClientes int64
+	var countProductos int64
+
+	db.GetDB().Model(&db.Factura{}).Select("SUM(total)").Row().Scan(&totalVentas)
+	db.GetDB().Model(&db.Factura{}).Count(&countFacturas)
+	db.GetDB().Model(&db.Client{}).Count(&countClientes)
+	db.GetDB().Model(&db.Product{}).Count(&countProductos)
+
+	f.SetCellValue(sheetRes, "A2", "Total Ventas Histórico")
+	f.SetCellValue(sheetRes, "B2", totalVentas)
+	f.SetCellValue(sheetRes, "A3", "Total Facturas Emitidas")
+	f.SetCellValue(sheetRes, "B3", countFacturas)
+	f.SetCellValue(sheetRes, "A4", "Total Clientes")
+	f.SetCellValue(sheetRes, "B4", countClientes)
+	f.SetCellValue(sheetRes, "A5", "Total Productos en Inventario")
+	f.SetCellValue(sheetRes, "B5", countProductos)
+	f.SetCellValue(sheetRes, "A6", "Fecha de Generación")
+	f.SetCellValue(sheetRes, "B6", time.Now().Format("02/01/2006 15:04"))
+
+	// 1. HOJA DE VENTAS (HISTORIAL)
+	sheetVentas := "Historial Ventas"
+	f.NewSheet(sheetVentas)
+
+	headersV := []string{"Fecha", "Secuencial", "Clave Acceso", "Cliente ID", "Total", "Estado"}
+	for i, h := range headersV {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetVentas, cell, h)
+		f.SetCellStyle(sheetVentas, cell, cell, headerStyle)
+	}
+
+	var facturas []db.Factura
+	db.GetDB().Order("fecha_emision desc").Find(&facturas)
+	for i, fact := range facturas {
+		row := i + 2
+		f.SetCellValue(sheetVentas, fmt.Sprintf("A%d", row), fact.FechaEmision.Format("02/01/2006 15:04"))
+		f.SetCellValue(sheetVentas, fmt.Sprintf("B%d", row), fact.Secuencial)
+		f.SetCellValue(sheetVentas, fmt.Sprintf("C%d", row), fact.ClaveAcceso)
+		f.SetCellValue(sheetVentas, fmt.Sprintf("D%d", row), fact.ClienteID)
+		f.SetCellValue(sheetVentas, fmt.Sprintf("E%d", row), fact.Total)
+		f.SetCellValue(sheetVentas, fmt.Sprintf("F%d", row), fact.EstadoSRI)
+	}
+
+	// 2. HOJA DE CLIENTES
+	sheetClientes := "Clientes"
+	f.NewSheet(sheetClientes)
+	headersC := []string{"Identificación", "Nombre", "Email", "Teléfono", "Dirección"}
+	for i, h := range headersC {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetClientes, cell, h)
+		f.SetCellStyle(sheetClientes, cell, cell, headerStyle)
+	}
+
+	var clients []db.Client
+	db.GetDB().Find(&clients)
+	for i, c := range clients {
+		row := i + 2
+		f.SetCellValue(sheetClientes, fmt.Sprintf("A%d", row), c.ID)
+		f.SetCellValue(sheetClientes, fmt.Sprintf("B%d", row), c.Nombre)
+		f.SetCellValue(sheetClientes, fmt.Sprintf("C%d", row), c.Email)
+		f.SetCellValue(sheetClientes, fmt.Sprintf("D%d", row), c.Telefono)
+		f.SetCellValue(sheetClientes, fmt.Sprintf("E%d", row), c.Direccion)
+	}
+
+	// 3. HOJA DE PRODUCTOS (INVENTARIO)
+	sheetProductos := "Inventario"
+	f.NewSheet(sheetProductos)
+	headersP := []string{"SKU", "Nombre", "Precio", "Stock", "% IVA"}
+	for i, h := range headersP {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetProductos, cell, h)
+		f.SetCellStyle(sheetProductos, cell, cell, headerStyle)
+	}
+
+	var products []db.Product
+	db.GetDB().Find(&products)
+	for i, p := range products {
+		row := i + 2
+		f.SetCellValue(sheetProductos, fmt.Sprintf("A%d", row), p.SKU)
+		f.SetCellValue(sheetProductos, fmt.Sprintf("B%d", row), p.Name)
+		f.SetCellValue(sheetProductos, fmt.Sprintf("C%d", row), p.Price)
+		f.SetCellValue(sheetProductos, fmt.Sprintf("D%d", row), p.Stock)
+		f.SetCellValue(sheetProductos, fmt.Sprintf("E%d", row), p.TaxPercentage)
+	}
+
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 type TopProduct struct {
 	SKU      string  `json:"sku"`
 	Name     string  `json:"name"`

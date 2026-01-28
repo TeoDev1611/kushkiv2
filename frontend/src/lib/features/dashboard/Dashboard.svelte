@@ -5,6 +5,7 @@
     import { withLoading, activeTab } from '$lib/stores/app';
     import { notifications } from '$lib/stores/notifications';
     import ChartFrame from '$lib/components/ui/ChartFrame.svelte';
+    import * as WailsApp from 'wailsjs/go/main/App';
 
     // Estado local
     let stats = {
@@ -56,6 +57,19 @@
         }
     }
 
+    async function handleExportMaster() {
+        try {
+            const res = await withLoading(WailsApp.ExportMasterReport());
+            if (res.startsWith("Error")) {
+                notifications.show(res, "error");
+            } else if (res !== "Cancelado") {
+                notifications.show(res, "success");
+            }
+        } catch (e) {
+            notifications.show("Error exportando: " + e, "error");
+        }
+    }
+
     function getDeadline(ruc: string) {
         if (!ruc || ruc.length < 9) return "--";
         const ninth = parseInt(ruc[8]);
@@ -80,6 +94,9 @@
             <p class="subtitle text-secondary">Control de ventas y obligaciones SRI</p>
         </div>
         <div class="header-actions">
+            <button class="btn-secondary" on:click={handleExportMaster} title="Exportar Reporte Maestro">
+                📊 Exportar Todo
+            </button>
             <div class="date-selector-group flex-row">
                 <input type="date" bind:value={dateRange.start} on:change={loadDashboardData} />
                 <span class="text-muted">al</span>

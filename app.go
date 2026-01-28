@@ -29,34 +29,12 @@ type App struct {
 	syncService      *service.SyncService
 	cloudService     *service.CloudService
 	mailService      *service.MailService
-		quotationService *service.QuotationService
-		searchService  *service.SearchService
-		chartService   *service.ChartService
-		taxService     *service.TaxService
-	}
-
-// DashboardStats contiene las métricas clave para el panel de control del frontend.
-type DashboardStats struct {
-	TotalVentas   float64     `json:"totalVentas"`   // Suma total de ventas autorizadas
-	TotalFacturas int64       `json:"totalFacturas"` // Cantidad total de facturas emitidas
-	Pendientes    int64       `json:"pendientes"`    // Facturas en estado no terminal (pendientes, devueltas)
-	SRIOnline     bool        `json:"sriOnline"`     // Estado de conexión simulado con el SRI
-	SalesTrend    []DailySale `json:"salesTrend"`    // Datos para el gráfico de tendencias
-}
-
-type DailySale struct {
-	Date  string  `json:"date"`
-	Total float64 `json:"total"`
-}
-
-type FacturasResponse struct {
-	Total int64                  `json:"total"`
-	Data  []db.FacturaResumenDTO `json:"data"`
-}
-
-type QuotationListResponse struct {
-	Total int64             `json:"total"`
-	Data  []db.QuotationDTO `json:"data"`
+	quotationService *service.QuotationService
+	searchService    *service.SearchService
+	chartService     *service.ChartService
+	taxService       *service.TaxService
+	productService   *service.ProductService
+	clientService    *service.ClientService
 }
 
 // NewApp creates a new App application struct
@@ -74,12 +52,14 @@ func NewApp() *App {
 		syncService:      service.NewSyncService(),
 		cloudService:     service.NewCloudService(),
 		mailService:      service.NewMailService(),
-				quotationService: service.NewQuotationService(),
-				searchService:  service.NewSearchService(),
-				chartService:   service.NewChartService(),
-				taxService:     service.NewTaxService(),
-			}
-		}
+		quotationService: service.NewQuotationService(),
+		searchService:    service.NewSearchService(),
+		chartService:     service.NewChartService(),
+		taxService:       service.NewTaxService(),
+		productService:   service.NewProductService(),
+		clientService:    service.NewClientService(),
+	}
+}
 
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
@@ -228,6 +208,32 @@ func (a *App) ExportSalesExcel(startStr, endStr string) string {
 	}
 
 	return "Reporte exportado exitosamente"
+}
+
+// ExportMasterReport genera un reporte Excel completo de toda la base de datos.
+func (a *App) ExportMasterReport() string {
+	data, err := a.reportService.GenerateMasterReportExcel()
+	if err != nil {
+		return fmt.Sprintf("Error generando reporte: %v", err)
+	}
+
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		DefaultFilename: fmt.Sprintf("Resumen_General_%s.xlsx", time.Now().Format("20060102")),
+		Title:           "Guardar Reporte Maestro",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Archivos Excel", Pattern: "*.xlsx"},
+		},
+	})
+
+	if err != nil || path == "" {
+		return "Cancelado"
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Sprintf("Error guardando archivo: %v", err)
+	}
+
+	return "Reporte maestro exportado exitosamente"
 }
 
 // GetTopProducts devuelve los productos más vendidos para gráficos.
@@ -518,6 +524,29 @@ type BackupDTO struct {
 	Size string `json:"size"`
 	Date string `json:"date"`
 	Path string `json:"path"`
+}
+
+type DailySale struct {
+	Date  string  `json:"date"`
+	Total float64 `json:"total"`
+}
+
+type DashboardStats struct {
+	TotalFacturas int64       `json:"totalFacturas"`
+	TotalVentas   float64     `json:"totalVentas"`
+	Pendientes    int         `json:"pendientes"`
+	SRIOnline     bool        `json:"sriOnline"`
+	SalesTrend    []DailySale `json:"salesTrend"`
+}
+
+type FacturasResponse struct {
+	Total int64                 `json:"total"`
+	Data  []db.FacturaResumenDTO `json:"data"`
+}
+
+type QuotationListResponse struct {
+	Total int64             `json:"total"`
+	Data  []db.QuotationDTO `json:"data"`
 }
 
 // GetBackups lista los archivos .zip en la carpeta de respaldos.
@@ -1015,6 +1044,58 @@ func (a *App) DeleteProduct(sku string) string {
 		return fmt.Sprintf("Error eliminando producto: %v", err)
 	}
 	return "Producto eliminado"
+}
+
+// ImportProductsCSV permite al usuario seleccionar un archivo CSV e importar productos masivamente.
+func (a *App) ImportProductsCSV() string {
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Seleccionar Archivo CSV de Productos",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Archivos CSV", Pattern: "*.csv"},
+		},
+	})
+	if err != nil || selection == "" {
+		return "Cancelado"
+	}
+
+	file, err := os.Open(selection)
+	if err != nil {
+		return fmt.Sprintf("Error abriendo archivo: %v", err)
+	}
+	defer file.Close()
+
+	count, err := a.productService.ImportProductsFromCSV(file)
+	if err != nil {
+		return fmt.Sprintf("Error importando productos: %v", err)
+	}
+
+	return fmt.Sprintf("Éxito: Se importaron/actualizaron %d productos", count)
+}
+
+// ImportClientsCSV permite al usuario seleccionar un archivo CSV e importar clientes masivamente.
+func (a *App) ImportClientsCSV() string {
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Seleccionar Archivo CSV de Clientes",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Archivos CSV", Pattern: "*.csv"},
+		},
+	})
+	if err != nil || selection == "" {
+		return "Cancelado"
+	}
+
+	file, err := os.Open(selection)
+	if err != nil {
+		return fmt.Sprintf("Error abriendo archivo: %v", err)
+	}
+	defer file.Close()
+
+	count, err := a.clientService.ImportClientsFromCSV(file)
+	if err != nil {
+		return fmt.Sprintf("Error importando clientes: %v", err)
+	}
+
+	return fmt.Sprintf("Éxito: Se importaron/actualizaron %d clientes", count)
 }
 
 // --- GESTIÓN DE COTIZACIONES ---

@@ -34,6 +34,10 @@ export function DeleteProduct(arg1) {
   return window['go']['main']['App']['DeleteProduct'](arg1);
 }
 
+export function ExportMasterReport() {
+  return window['go']['main']['App']['ExportMasterReport']();
+}
+
 export function ExportSalesExcel(arg1, arg2) {
   return window['go']['main']['App']['ExportSalesExcel'](arg1, arg2);
 }
@@ -92,6 +96,14 @@ export function GetTopProducts() {
 
 export function GetVATSummary(arg1, arg2) {
   return window['go']['main']['App']['GetVATSummary'](arg1, arg2);
+}
+
+export function ImportClientsCSV() {
+  return window['go']['main']['App']['ImportClientsCSV']();
+}
+
+export function ImportProductsCSV() {
+  return window['go']['main']['App']['ImportProductsCSV']();
 }
 
 export function NotifyFrontend(arg1, arg2) {

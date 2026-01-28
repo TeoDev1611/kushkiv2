@@ -27,7 +27,7 @@ func TestGenerateRevenueChart(t *testing.T) {
 		t.Fatalf("Error generando chart: %v", err)
 	}
 
-	if !strings.Contains(html, "Evolución de Ingresos") {
+	if !strings.Contains(html, "Ingresos Mensuales") {
 		t.Errorf("El HTML no contiene el título esperado")
 	}
 	// go-echarts genera un HTML grande, verificar contenido exacto es difícil,

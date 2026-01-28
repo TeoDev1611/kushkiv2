@@ -117,12 +117,29 @@
             notifications.show("Error eliminando: " + e, "error");
         }
     }
+
+    async function handleImportCSV() {
+        try {
+            const res = await WailsApp.ImportClientsCSV();
+            if (res.startsWith("Error")) {
+                notifications.show(res, "error");
+            } else if (res !== "Cancelado") {
+                notifications.show(res, "success");
+                await loadClients();
+            }
+        } catch (e) {
+            notifications.show("Error importando: " + e, "error");
+        }
+    }
 </script>
 
 <div class="panel full-height" in:fade={{ duration: 200 }}>
     <div class="header-row">
         <h1>Directorio de Clientes</h1>
         <div style="flex: 1"></div> 
+        <button class="btn-secondary" on:click={handleImportCSV}>
+            📥 Importar CSV
+        </button>
     </div>
 
     <div class="master-detail-layout">

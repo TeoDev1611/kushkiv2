@@ -339,8 +339,8 @@ export namespace main {
 	    }
 	}
 	export class DashboardStats {
-	    totalVentas: number;
 	    totalFacturas: number;
+	    totalVentas: number;
 	    pendientes: number;
 	    sriOnline: boolean;
 	    salesTrend: DailySale[];
@@ -351,8 +351,8 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.totalVentas = source["totalVentas"];
 	        this.totalFacturas = source["totalFacturas"];
+	        this.totalVentas = source["totalVentas"];
 	        this.pendientes = source["pendientes"];
 	        this.sriOnline = source["sriOnline"];
 	        this.salesTrend = this.convertValues(source["salesTrend"], DailySale);

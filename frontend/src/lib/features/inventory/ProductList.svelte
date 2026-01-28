@@ -143,6 +143,22 @@
         }
     }
 
+    async function handleImportCSV() {
+        try {
+            const res = await WailsApp.ImportProductsCSV();
+            if (res.startsWith("Éxito")) {
+                notifications.show(res, "success");
+                await loadProducts();
+            } else if (res === "Cancelado") {
+                // No hacer nada
+            } else {
+                notifications.show(res, "error");
+            }
+        } catch (e) {
+            notifications.show("Error importando: " + e, "error");
+        }
+    }
+
     function updateTaxPercentage() {
         const map: Record<string, number> = { "0": 0, "2": 12, "4": 15, "5": 5 };
         editingProduct.TaxPercentage = map[editingProduct.TaxCode] || 0;
@@ -150,8 +166,11 @@
 </script>
 
 <div class="panel full-height" in:fade={{ duration: 200 }}>
-    <div class="header-row">
+    <div class="header-row flex-row space-between align-center">
         <h1>Inventario de Productos</h1>
+        <button class="btn-secondary" on:click={handleImportCSV}>
+            📥 Importar CSV
+        </button>
     </div>
 
     <div class="master-detail-layout">
