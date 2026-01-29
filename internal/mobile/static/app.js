@@ -48,8 +48,23 @@ const dom = {
     // Scanner
     btnStopScan: document.getElementById('btn-stop-scan'),
     
+    // Create Modal
+    btnOpenCreate: document.getElementById('btn-open-create'),
+    modalCreate: document.getElementById('create-modal'),
+    btnCloseCreate: document.getElementById('btn-close-create'),
+    btnSaveCreate: document.getElementById('btn-save-create'),
+    btnScanCreate: document.getElementById('btn-scan-create'),
+    createSku: document.getElementById('create-sku'),
+    createName: document.getElementById('create-name'),
+    createPrice: document.getElementById('create-price'),
+    createStock: document.getElementById('create-stock'),
+    createLocation: document.getElementById('create-location'),
+    
     toast: document.getElementById('toast')
 };
+
+// State extensions
+state.isCreating = false;
 
 // Init
 window.addEventListener('DOMContentLoaded', () => {
@@ -96,8 +111,67 @@ function updateModeUI() {
 }
 
 // Scanner Logic
-dom.btnScan.addEventListener('click', startScanner);
+dom.btnScan.addEventListener('click', () => {
+    state.isCreating = false; // Normal scan mode
+    startScanner();
+});
 dom.btnStopScan.addEventListener('click', stopScanner);
+
+// Create Modal Logic
+dom.btnOpenCreate.addEventListener('click', () => {
+    dom.createSku.value = "";
+    dom.createName.value = "";
+    dom.createPrice.value = "";
+    dom.createStock.value = "";
+    dom.createLocation.value = "";
+    dom.modalCreate.classList.remove('hidden');
+});
+
+dom.btnCloseCreate.addEventListener('click', () => dom.modalCreate.classList.add('hidden'));
+
+dom.btnScanCreate.addEventListener('click', () => {
+    state.isCreating = true; // Create-specific scan mode
+    startScanner();
+});
+
+dom.btnSaveCreate.addEventListener('click', async () => {
+    const data = {
+        SKU: dom.createSku.value.trim(),
+        Barcode: dom.createSku.value.trim(),
+        Name: dom.createName.value.trim(),
+        Price: parseFloat(dom.createPrice.value) || 0,
+        Stock: parseInt(dom.createStock.value) || 0,
+        Location: dom.createLocation.value.trim(),
+        TaxCode: "2",
+        TaxPercentage: 15
+    };
+
+    if (!data.SKU || !data.Name) {
+        return showToast("SKU y Nombre son requeridos");
+    }
+
+    try {
+        const res = await fetch('/api/product/create', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Kushki-Token': state.token 
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (res.status === 201) {
+            showToast("Producto creado exitosamente");
+            dom.modalCreate.classList.add('hidden');
+            await loadInventory(); // Refresh list
+        } else {
+            const err = await res.json();
+            showToast("Error: " + (err.error || "Fallo al crear"));
+        }
+    } catch (e) {
+        showToast("Error de red");
+    }
+});
 
 async function startScanner() {
     views.inventory.classList.add('hidden');
@@ -133,6 +207,13 @@ function stopScanner() {
 }
 
 function onScanSuccess(decodedText, decodedResult) {
+    if (state.isCreating) {
+        dom.createSku.value = decodedText;
+        showToast("Código capturado");
+        stopScanner();
+        return;
+    }
+
     // Si estamos en modo POS, enviar directo
     if (state.isPosMode) {
         sendToPos(decodedText);
@@ -211,9 +292,6 @@ document.querySelectorAll('.btn-pos-qty').forEach(btn => {
 dom.btnSaveStock.addEventListener('click', async () => {
     if (!state.editingProduct) return;
     
-    // Aquí podríamos guardar también Location, pero el endpoint actual solo guarda stock.
-    // TODO: Actualizar endpoint backend para aceptar Location.
-    
     try {
         const res = await fetch('/api/stock', {
             method: 'POST',
@@ -224,12 +302,14 @@ dom.btnSaveStock.addEventListener('click', async () => {
             body: JSON.stringify({
                 sku: state.editingProduct.SKU,
                 quantity: state.tempStock,
+                location: dom.modalLocation.value.trim(),
                 type: 'set'
             })
         });
         
         if (res.ok) {
             state.editingProduct.Stock = state.tempStock;
+            state.editingProduct.Location = dom.modalLocation.value.trim();
             renderList();
             dom.modal.classList.add('hidden');
             showToast('Guardado');

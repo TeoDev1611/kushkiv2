@@ -27,8 +27,9 @@
         <main>
             <!-- LISTA PRODUCTOS -->
             <div id="inventory-view">
-                <div class="search-bar">
-                    <input type="text" id="search-input" placeholder="🔍 Buscar producto..." />
+                <div class="search-bar" style="display: flex; gap: 10px; align-items: center;">
+                    <input type="text" id="search-input" placeholder="🔍 Buscar producto..." style="flex: 1;" />
+                    <button id="btn-open-create" class="btn-fab-small">＋</button>
                 </div>
                 <div id="product-list" class="product-list">
                     <!-- Items JS -->
@@ -105,6 +106,47 @@
                 
                 <button id="btn-save-stock" class="btn-primary">GUARDAR CAMBIOS</button>
             </div>
+        </div>
+    </div>
+
+    <!-- CREATE MODAL -->
+    <div id="create-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                <h2 style="margin: 0;">Nuevo Producto</h2>
+                <button id="btn-close-create" style="background:none; border:none; color:white; font-size: 1.5rem;">✕</button>
+            </div>
+
+            <div class="form-group">
+                <label>Código de Barras / SKU</label>
+                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                    <input type="text" id="create-sku" placeholder="Escanee o escriba..." style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #222; color: white;">
+                    <button id="btn-scan-create" style="padding: 0 15px; border-radius: 8px; border: none; background: var(--accent-mint); color: black;">📷</button>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label>Nombre del Producto</label>
+                <input type="text" id="create-name" placeholder="Ej: Coca Cola 1L" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; margin-top: 5px;">
+            </div>
+
+            <div style="display: flex; gap: 15px; margin-top: 15px;">
+                <div style="flex: 1;">
+                    <label>Precio PVP</label>
+                    <input type="number" id="create-price" step="0.01" placeholder="0.00" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; margin-top: 5px;">
+                </div>
+                <div style="flex: 1;">
+                    <label>Stock Inicial</label>
+                    <input type="number" id="create-stock" placeholder="0" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; margin-top: 5px;">
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 15px; margin-bottom: 25px;">
+                <label>Ubicación</label>
+                <input type="text" id="create-location" placeholder="Ej: Pasillo 1" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; margin-top: 5px;">
+            </div>
+            
+            <button id="btn-save-create" class="btn-primary">REGISTRAR PRODUCTO</button>
         </div>
     </div>
 

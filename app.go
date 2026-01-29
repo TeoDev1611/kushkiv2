@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -101,38 +102,39 @@ func (a *App) startLocalServer() {
 	
 	// Middleware
 	if logger.DebugMode {
-		e.Use(middleware.Logger()) // Log requests only in debug mode
+		e.Use(middleware.Logger())
 	}
 	e.Use(middleware.CORS())
 	e.Use(middleware.Recover())
-	// e.Use(middleware.Gzip()) // Disabled temporarily to debug latency
 
-	// API Group (Authenticated)
+	// API Group
 	api := e.Group("/api")
 	api.Use(a.authMiddlewareEcho)
-	
 	api.GET("/inventory", a.handleGetInventoryEcho)
 	api.POST("/stock", a.handleUpdateStockEcho)
+	api.POST("/product/create", a.handleCreateProductEcho)
 	api.POST("/pos/scan", a.handlePOSScan)
-	api.GET("/status", func(c echo.Context) error {
-		return c.String(http.StatusOK, "OK")
-	})
+	api.GET("/status", func(c echo.Context) error { return c.String(http.StatusOK, "OK") })
 
-	// Static Assets (Mobile App)
+	// Static Assets
 	staticFS, err := fs.Sub(mobileAssets, "internal/mobile/static")
-	if err != nil {
-		logger.Error("Error loading embedded mobile assets: %v", err)
-	} else {
-		// Serve index.html for root, and other files normally
-		// Using StaticFS with http.FS adapter
+	if err == nil {
 		e.GET("/*", echo.WrapHandler(http.FileServer(http.FS(staticFS))))
 	}
 
-	logger.Debug("Starting Local Server (Echo) on 0.0.0.0:%s...", a.serverPort)
-	logger.Debug("IMPORTANTE: Si no conecta desde el celular, verifique su Firewall (sudo ufw allow %s)", a.serverPort)
+	ip := a.getLocalIP()
+	cert, err := util.GenerateSelfSignedCert(ip)
+	if err != nil {
+		logger.Error("TLS Error, fallback to HTTP: %v", err)
+		e.Start("0.0.0.0:" + a.serverPort)
+		return
+	}
+
+	e.TLSServer.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
 	
-	if err := e.Start("0.0.0.0:" + a.serverPort); err != nil {
-		logger.Error("Error starting local server: %v", err)
+	logger.Debug("Satellite Server (HTTPS) on https://%s:%s", ip, a.serverPort)
+	if err := e.StartTLS("0.0.0.0:"+a.serverPort, nil, nil); err != nil {
+		logger.Error("StartTLS error: %v", err)
 	}
 }
 
@@ -156,9 +158,51 @@ func (a *App) handleGetInventoryEcho(c echo.Context) error {
 	return c.JSON(http.StatusOK, products)
 }
 
+func (a *App) handleCreateProductEcho(c echo.Context) error {
+	var req db.ProductDTO
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Bad Request"})
+	}
+
+	if req.SKU == "" && req.Barcode != "" {
+		req.SKU = req.Barcode
+	}
+	
+	if req.SKU == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "SKU o Barcode es requerido"})
+	}
+
+	taxCodeInt, _ := strconv.Atoi(req.TaxCode)
+	if taxCodeInt == 0 {
+		taxCodeInt = 2 // Default IVA
+		req.TaxPercentage = 15
+	}
+
+	product := db.Product{
+		SKU:           req.SKU,
+		Name:          req.Name,
+		Price:         req.Price,
+		Stock:         req.Stock,
+		TaxCode:       taxCodeInt,
+		TaxPercentage: req.TaxPercentage,
+		Barcode:       req.Barcode,
+		Location:      req.Location,
+	}
+
+	if err := db.GetDB().Create(&product).Error; err != nil {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "El SKU o Código ya existe"})
+	}
+
+	// Notify Frontend
+	runtime.EventsEmit(a.ctx, "inventory-updated", product)
+
+	return c.JSON(http.StatusCreated, product)
+}
+
 type StockUpdateRequest struct {
 	SKU      string `json:"sku"`
 	Quantity int    `json:"quantity"`
+	Location string `json:"location"` // New field
 	Type     string `json:"type"` 
 }
 
@@ -179,9 +223,17 @@ func (a *App) handleUpdateStockEcho(c echo.Context) error {
 		product.Stock += req.Quantity
 	}
 
-	// Use UpdateColumn to only update the stock field and avoid Unique Constraint violations 
-	// on other fields (like Barcode="") if they haven't changed but trigger validation.
-	if err := db.GetDB().Model(&product).Update("stock", product.Stock).Error; err != nil {
+	// Actualizar ubicación si viene en el request
+	updates := map[string]interface{}{
+		"stock": product.Stock,
+	}
+	if req.Location != "" {
+		updates["location"] = req.Location
+		product.Location = req.Location
+	}
+
+	// Use UpdateColumns to update multiple fields while avoiding other constraint triggers
+	if err := db.GetDB().Model(&product).Updates(updates).Error; err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
 
@@ -243,7 +295,7 @@ func (a *App) GetSatelliteConnectionInfo() SatelliteConnectionDTO {
 		IP:    ip,
 		Port:  a.serverPort,
 		Token: a.satelliteToken,
-		URL:   fmt.Sprintf("http://%s:%s/?token=%s", ip, a.serverPort, a.satelliteToken),
+		URL:   fmt.Sprintf("https://%s:%s/?token=%s", ip, a.serverPort, a.satelliteToken),
 	}
 }
 

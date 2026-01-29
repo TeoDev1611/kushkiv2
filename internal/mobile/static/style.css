@@ -231,6 +231,25 @@ main {
     border: 4px solid var(--bg-app);
 }
 
+.btn-fab-small {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent-mint);
+    color: black;
+    font-size: 1.5rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.form-group label {
+    font-size: 0.8rem;
+    color: #888;
+}
+
 /* --- MODAL --- */
 .modal-overlay {
     position: fixed;
