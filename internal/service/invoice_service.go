@@ -156,15 +156,20 @@ func (s *InvoiceService) EmitirFactura(dto *db.FacturaDTO) error {
 	totalSinImpuestos = util.Round(totalSinImpuestos, 2)
 
 	// 3. Formateo Estricto SRI (Padding)
-	// ... (Código intermedio omitido para brevedad en el replacement, pero se mantiene intacto)
+	// RECALCULAR SECUENCIAL: Ignoramos el del DTO por ser inseguro (concurrencia)
+	// y obtenemos el verdadero siguiente disponible.
+	realSec, _ := s.GetNextSecuencial()
 	var nEstab, nPtoEmi, nSec int
 	fmt.Sscanf(config.Estab, "%d", &nEstab)
 	fmt.Sscanf(config.PtoEmi, "%d", &nPtoEmi)
-	fmt.Sscanf(dto.Secuencial, "%d", &nSec)
+	fmt.Sscanf(realSec, "%d", &nSec)
 
 	estabStr := fmt.Sprintf("%03d", nEstab)
 	ptoEmiStr := fmt.Sprintf("%03d", nPtoEmi)
 	secuencialStr := fmt.Sprintf("%09d", nSec)
+
+	// Actualizar DTO para reflejar el real usado
+	dto.Secuencial = secuencialStr
 
 	// 4. Generar Clave de Acceso (49 dígitos)
 	// Algoritmo estándar del SRI: Fecha + Tipo + RUC + Ambiente + Serie + Secuencial + Código + TipoEmisión + DigitoVerificador

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kushki Mobile</title>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- LOGIN VIEW -->
+    <div id="login-view">
+        <div class="logo">KUSHKI</div>
+        <p style="color: #888; margin-bottom: 20px;">Ingrese el PIN de conexión</p>
+        <input type="tel" id="pin-input" class="pin-input" maxlength="6" placeholder="******" />
+        <button id="btn-login" class="btn-primary">CONECTAR</button>
+    </div>
+
+    <!-- MAIN APP VIEW -->
+    <div id="app-view" class="hidden">
+        <header>
+            <div class="header-title">KUSHKI</div>
+            <div id="mode-badge" class="header-mode">INVENTARIO</div>
+        </header>
+
+        <main>
+            <!-- LISTA PRODUCTOS -->
+            <div id="inventory-view">
+                <div class="search-bar">
+                    <input type="text" id="search-input" placeholder="🔍 Buscar producto..." />
+                </div>
+                <div id="product-list" class="product-list">
+                    <!-- Items JS -->
+                </div>
+            </div>
+
+            <!-- ESCANER DE CAMARA -->
+            <div id="scanner-view" class="hidden">
+                <div id="reader"></div>
+                <div class="scanner-controls">
+                    <p style="color: #999; margin-bottom: 10px;">Apunte al código de barras</p>
+                    <button class="btn-primary" id="btn-stop-scan" style="background: #333; color: white;">Cancelar</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- BOTTOM NAV -->
+        <nav class="bottom-nav">
+            <div class="nav-item active" data-target="inventory">
+                <span class="nav-icon">📦</span>
+                <span>Bodega</span>
+            </div>
+            
+            <div class="nav-fab" id="btn-scan">
+                <span>📷</span>
+            </div>
+
+            <div class="nav-item" id="btn-toggle-pos">
+                <span class="nav-icon">🛒</span>
+                <span id="pos-label">Modo POS</span>
+            </div>
+        </nav>
+    </div>
+
+    <!-- EDIT MODAL -->
+    <div id="edit-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                <div>
+                    <h2 id="modal-title" style="margin: 0;">Producto</h2>
+                    <span id="modal-sku" style="color: #888; font-size: 0.9rem;">SKU</span>
+                </div>
+                <button id="btn-close-modal" style="background:none; border:none; color:white; font-size: 1.5rem;">✕</button>
+            </div>
+
+            <!-- Control POS vs Inventario -->
+            <div id="pos-controls" class="hidden">
+                <div class="qty-editor" style="justify-content: center; gap: 15px; margin-bottom: 20px;">
+                    <button class="btn-circle btn-pos-qty" data-delta="-1">-1</button>
+                    <span id="pos-qty-display" class="stock-display">1</span>
+                    <button class="btn-circle btn-pos-qty" data-delta="1">+1</button>
+                    <button class="btn-circle btn-pos-qty" data-delta="10">+10</button>
+                </div>
+
+                <button id="btn-send-pos" class="btn-primary" style="margin-bottom: 10px;">
+                    🛒 ENVIAR A CAJA
+                </button>
+                <p style="text-align: center; color: #666; font-size: 0.8rem;">Toque para añadir a la venta en curso</p>
+            </div>
+
+            <div id="inventory-controls">
+                <div class="qty-editor">
+                    <button class="btn-circle btn-qty" data-delta="-10">-10</button>
+                    <button class="btn-circle btn-qty" data-delta="-1">-1</button>
+                    <span id="modal-stock" class="stock-display">0</span>
+                    <button class="btn-circle btn-qty" data-delta="1">+1</button>
+                    <button class="btn-circle btn-qty" data-delta="10">+10</button>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="color:#888; font-size:0.8rem;">Ubicación</label>
+                    <input type="text" id="modal-location" placeholder="Ej: Pasillo 3" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; margin-top: 5px;">
+                </div>
+                
+                <button id="btn-save-stock" class="btn-primary">GUARDAR CAMBIOS</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="hidden">Mensaje</div>
+
+    <!-- Scripts -->
+    <script src="html5-qrcode.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

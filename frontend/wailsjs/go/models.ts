@@ -198,6 +198,11 @@ export namespace db {
 	    Stock: number;
 	    TaxCode: string;
 	    TaxPercentage: number;
+	    Barcode: string;
+	    AuxiliaryCode: string;
+	    MinStock: number;
+	    ExpiryDate: string;
+	    Location: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProductDTO(source);
@@ -211,6 +216,11 @@ export namespace db {
 	        this.Stock = source["Stock"];
 	        this.TaxCode = source["TaxCode"];
 	        this.TaxPercentage = source["TaxPercentage"];
+	        this.Barcode = source["Barcode"];
+	        this.AuxiliaryCode = source["AuxiliaryCode"];
+	        this.MinStock = source["MinStock"];
+	        this.ExpiryDate = source["ExpiryDate"];
+	        this.Location = source["Location"];
 	    }
 	}
 	export class QuotationItemDTO {
@@ -439,6 +449,24 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class SatelliteConnectionDTO {
+	    ip: string;
+	    port: string;
+	    token: string;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SatelliteConnectionDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ip = source["ip"];
+	        this.port = source["port"];
+	        this.token = source["token"];
+	        this.url = source["url"];
+	    }
 	}
 
 }

@@ -7,6 +7,7 @@
     
     const menuItems = [
         { id: 'dashboard', path: 'M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z', label: 'Dashboard' },
+        { id: 'pos', path: 'M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z', label: 'Modo POS' },
         { id: 'invoice', path: 'M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z', label: 'Facturar' },
         { id: 'quotations', path: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z', label: 'Cotizaciones' },
         { id: 'products', path: 'M20 9V7c0-1.1-.9-2-2-2h-3L15 2H9L7.5 5H5c-1.1 0-2 .9-2 2v2c-1.11 0-2 .89-2 2v4h4v-2h14v2h4v-4c0-1.11-.89-2-2-2zm-6 0h-4V7h4v2z', label: 'Productos' },

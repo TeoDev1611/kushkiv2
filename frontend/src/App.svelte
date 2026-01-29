@@ -13,6 +13,7 @@
     import ProductList from '$lib/features/inventory/ProductList.svelte';
     import HistoryPanel from '$lib/features/history/HistoryPanel.svelte';
     import InvoiceEmitter from '$lib/features/invoice/InvoiceEmitter.svelte';
+    import PosView from '$lib/features/pos/PosView.svelte';
     import QuotationPanel from '$lib/features/quotations/QuotationPanel.svelte';
     import SyncPanel from '$lib/features/sync/SyncPanel.svelte';
 
@@ -64,11 +65,11 @@
             notifications.show("Nueva Factura iniciada", "info");
         }
 
-        // Navegación por pestañas (Ctrl + 1..8)
+        // Navegación por pestañas (Ctrl + 1..9)
         if ((event.ctrlKey || event.metaKey) && !isNaN(parseInt(event.key))) {
             const num = parseInt(event.key);
             // Orden coincidente con Sidebar.svelte
-            const tabs = ['dashboard', 'invoice', 'quotations', 'products', 'clients', 'history', 'sync', 'config'];
+            const tabs = ['dashboard', 'pos', 'invoice', 'quotations', 'products', 'clients', 'history', 'sync', 'config'];
             if (num >= 1 && num <= tabs.length) {
                 event.preventDefault();
                 activeTab.set(tabs[num - 1]);
@@ -176,6 +177,8 @@
             <section class="content-area" bind:this={contentArea}>
                 {#if $activeTab === 'dashboard'}
                     <Dashboard />
+                {:else if $activeTab === 'pos'}
+                    <PosView />
                 {:else if $activeTab === 'invoice'}
                     <InvoiceEmitter />
                 {:else if $activeTab === 'quotations'}

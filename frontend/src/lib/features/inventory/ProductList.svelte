@@ -6,6 +6,7 @@
     import { withLoading } from '$lib/stores/app';
     import type { db } from 'wailsjs/go/models';
     import * as WailsApp from 'wailsjs/go/main/App';
+    import { EventsOn } from '../../../../wailsjs/runtime/runtime';
 
     // Estado local
     let products: db.ProductDTO[] = [];
@@ -32,6 +33,23 @@
     onMount(() => {
         window.addEventListener('app-save', handleGlobalSave);
         loadProducts();
+
+        // Real-time Sync Listener
+        EventsOn("inventory-updated", (updatedProd: any) => {
+            const index = products.findIndex(p => p.SKU === updatedProd.SKU);
+            if (index !== -1) {
+                products[index].Stock = updatedProd.Stock;
+                // Forzar reactividad
+                products = [...products]; 
+                
+                // Si estamos editando este producto, actualizar también el form
+                if (isEditing && editingProduct.SKU === updatedProd.SKU) {
+                    editingProduct.Stock = updatedProd.Stock;
+                }
+                
+                notifications.show(`Stock actualizado: ${updatedProd.Name}`, "info");
+            }
+        });
     });
 
     onDestroy(() => {

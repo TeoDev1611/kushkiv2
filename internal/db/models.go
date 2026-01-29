@@ -103,6 +103,12 @@ type Product struct {
 	Stock         int
 	TaxCode       int
 	TaxPercentage int
+	// Nuevos campos POS
+	Barcode       string `gorm:"uniqueIndex"`
+	AuxiliaryCode string
+	MinStock      int
+	ExpiryDate    *time.Time
+	Location      string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -219,6 +225,11 @@ type ProductDTO struct {
 	Stock         int     `json:"Stock"`
 	TaxCode       string  `json:"TaxCode"`
 	TaxPercentage int     `json:"TaxPercentage"`
+	Barcode       string  `json:"Barcode"`
+	AuxiliaryCode string  `json:"AuxiliaryCode"`
+	MinStock      int     `json:"MinStock"`
+	ExpiryDate    string  `json:"ExpiryDate"` // Format: 2006-01-02
+	Location      string  `json:"Location"`
 }
 
 type FacturaDTO struct {

@@ -180,8 +180,8 @@ func (s *SearchService) FuzzySearchProducts(query string) ([]db.ProductDTO, erro
 	productMap := make(map[string]db.Product)
 
 	for i, p := range products {
-		// Búsqueda por Nombre, SKU, Precio
-		searchStr := fmt.Sprintf("%s %s %.2f", p.Name, p.SKU, p.Price)
+		// Búsqueda por Nombre, SKU, Precio, Código de Barras y Código Auxiliar
+		searchStr := fmt.Sprintf("%s %s %s %s %.2f", p.Name, p.SKU, p.Barcode, p.AuxiliaryCode, p.Price)
 		source[i] = ProductSearchItem{
 			SKU:           p.SKU,
 			SearchContent: searchStr,
@@ -206,6 +206,11 @@ func (s *SearchService) FuzzySearchProducts(query string) ([]db.ProductDTO, erro
 func (s *SearchService) mapProductsToDTO(products []db.Product) []db.ProductDTO {
 	dtos := make([]db.ProductDTO, 0)
 	for _, p := range products {
+		expiryStr := ""
+		if p.ExpiryDate != nil {
+			expiryStr = p.ExpiryDate.Format("2006-01-02")
+		}
+
 		dtos = append(dtos, db.ProductDTO{
 			SKU:           p.SKU,
 			Name:          p.Name,
@@ -213,6 +218,11 @@ func (s *SearchService) mapProductsToDTO(products []db.Product) []db.ProductDTO 
 			Stock:         p.Stock,
 			TaxCode:       fmt.Sprintf("%d", p.TaxCode),
 			TaxPercentage: p.TaxPercentage,
+			Barcode:       p.Barcode,
+			AuxiliaryCode: p.AuxiliaryCode,
+			MinStock:      p.MinStock,
+			ExpiryDate:    expiryStr,
+			Location:      p.Location,
 		})
 	}
 	return dtos

@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"kushkiv2/internal/db"
 	"kushkiv2/internal/service"
 	"kushkiv2/pkg/crypto"
 	"kushkiv2/pkg/logger"
 	"kushkiv2/pkg/util"
+	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,8 +22,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+//go:embed internal/mobile/static
+var mobileAssets embed.FS
 
 // App struct is the main application controller.
 // It handles the lifecycle, dependency injection of services, and exposes methods to the frontend.
@@ -35,6 +45,10 @@ type App struct {
 	taxService       *service.TaxService
 	productService   *service.ProductService
 	clientService    *service.ClientService
+
+	// Satellite Server
+	satelliteToken string
+	serverPort     string
 }
 
 // NewApp creates a new App application struct
@@ -58,6 +72,7 @@ func NewApp() *App {
 		taxService:       service.NewTaxService(),
 		productService:   service.NewProductService(),
 		clientService:    service.NewClientService(),
+		serverPort:       "8085", // Default port
 	}
 }
 
@@ -65,8 +80,212 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	// Perform your setup here
 	a.ctx = ctx
+	
+	// Generate Satellite Token (Simple 6-digit PIN for ease of typing on mobile)
+	rand.Seed(time.Now().UnixNano())
+	a.satelliteToken = fmt.Sprintf("%06d", rand.Intn(1000000))
+	logger.Debug("Satellite Token: %s", a.satelliteToken)
+
 	a.startLicenseHeartbeat()
 	a.syncService.StartWorker()
+	
+	// Start Local API Server
+	go a.startLocalServer()
+}
+
+// --- LOCAL SERVER (SATELLITE) ---
+
+func (a *App) startLocalServer() {
+	e := echo.New()
+	e.HideBanner = true
+	
+	// Middleware
+	if logger.DebugMode {
+		e.Use(middleware.Logger()) // Log requests only in debug mode
+	}
+	e.Use(middleware.CORS())
+	e.Use(middleware.Recover())
+	// e.Use(middleware.Gzip()) // Disabled temporarily to debug latency
+
+	// API Group (Authenticated)
+	api := e.Group("/api")
+	api.Use(a.authMiddlewareEcho)
+	
+	api.GET("/inventory", a.handleGetInventoryEcho)
+	api.POST("/stock", a.handleUpdateStockEcho)
+	api.POST("/pos/scan", a.handlePOSScan)
+	api.GET("/status", func(c echo.Context) error {
+		return c.String(http.StatusOK, "OK")
+	})
+
+	// Static Assets (Mobile App)
+	staticFS, err := fs.Sub(mobileAssets, "internal/mobile/static")
+	if err != nil {
+		logger.Error("Error loading embedded mobile assets: %v", err)
+	} else {
+		// Serve index.html for root, and other files normally
+		// Using StaticFS with http.FS adapter
+		e.GET("/*", echo.WrapHandler(http.FileServer(http.FS(staticFS))))
+	}
+
+	logger.Debug("Starting Local Server (Echo) on 0.0.0.0:%s...", a.serverPort)
+	logger.Debug("IMPORTANTE: Si no conecta desde el celular, verifique su Firewall (sudo ufw allow %s)", a.serverPort)
+	
+	if err := e.Start("0.0.0.0:" + a.serverPort); err != nil {
+		logger.Error("Error starting local server: %v", err)
+	}
+}
+
+func (a *App) authMiddlewareEcho(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		token := c.Request().Header.Get("X-Kushki-Token")
+		// Allow status check without auth (optional, but good for connectivity test)
+		if c.Path() == "/api/status" {
+			return next(c)
+		}
+		
+		if token != a.satelliteToken {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		}
+		return next(c)
+	}
+}
+
+func (a *App) handleGetInventoryEcho(c echo.Context) error {
+	products := a.GetProducts()
+	return c.JSON(http.StatusOK, products)
+}
+
+type StockUpdateRequest struct {
+	SKU      string `json:"sku"`
+	Quantity int    `json:"quantity"`
+	Type     string `json:"type"` 
+}
+
+func (a *App) handleUpdateStockEcho(c echo.Context) error {
+	var req StockUpdateRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Bad Request"})
+	}
+
+	var product db.Product
+	if err := db.GetDB().First(&product, "sku = ?", req.SKU).Error; err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Product not found"})
+	}
+
+	if req.Type == "set" {
+		product.Stock = req.Quantity
+	} else {
+		product.Stock += req.Quantity
+	}
+
+	// Use UpdateColumn to only update the stock field and avoid Unique Constraint violations 
+	// on other fields (like Barcode="") if they haven't changed but trigger validation.
+	if err := db.GetDB().Model(&product).Update("stock", product.Stock).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+
+	// Notify Frontend
+	runtime.EventsEmit(a.ctx, "inventory-updated", product)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"success":  true,
+		"newStock": product.Stock,
+	})
+}
+
+type POSScanRequest struct {
+	SKU      string `json:"sku"`
+	Quantity int    `json:"quantity"` // Optional, defaults to 1 if 0
+}
+
+func (a *App) handlePOSScan(c echo.Context) error {
+	var req POSScanRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Bad Request"})
+	}
+
+	if req.Quantity == 0 {
+		req.Quantity = 1
+	}
+
+	// Buscar el producto para enviar info completa (opcional, pero útil)
+	var product db.Product
+	if err := db.GetDB().First(&product, "sku = ? OR barcode = ?", req.SKU, req.SKU).Error; err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Product not found"})
+	}
+
+	// Enviar evento a Desktop
+	// El frontend escuchará "pos-scan-event" y lo añadirá al carrito
+	runtime.EventsEmit(a.ctx, "pos-scan-event", map[string]interface{}{
+		"sku":      product.SKU,
+		"quantity": req.Quantity,
+		"product":  product,
+	})
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Sent to POS",
+		"product": product.Name,
+	})
+}
+
+type SatelliteConnectionDTO struct {
+	IP    string `json:"ip"`
+	Port  string `json:"port"`
+	Token string `json:"token"`
+	URL   string `json:"url"`
+}
+
+func (a *App) GetSatelliteConnectionInfo() SatelliteConnectionDTO {
+	ip := a.getLocalIP()
+	return SatelliteConnectionDTO{
+		IP:    ip,
+		Port:  a.serverPort,
+		Token: a.satelliteToken,
+		URL:   fmt.Sprintf("http://%s:%s/?token=%s", ip, a.serverPort, a.satelliteToken),
+	}
+}
+
+func (a *App) getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "127.0.0.1"
+	}
+	
+	var candidates []string
+
+	for _, address := range addrs {
+		// Verificar que sea IPv4 y no Loopback
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				ip := ipnet.IP.String()
+				// Prioridad 1: 192.168.x.x (Redes domésticas comunes)
+				if strings.HasPrefix(ip, "192.168.") {
+					return ip
+				}
+				// Prioridad 2: 10.x.x.x (Redes corporativas comunes)
+				if strings.HasPrefix(ip, "10.") {
+					candidates = append(candidates, ip)
+					continue
+				}
+				// Prioridad 3: 172.x.x.x
+				if strings.HasPrefix(ip, "172.") {
+					candidates = append(candidates, ip)
+					continue
+				}
+				// Otros (ej: IPs públicas o raras)
+				candidates = append(candidates, ip)
+			}
+		}
+	}
+
+	// Si no encontramos una 192.168, devolvemos la primera de las candidatas (si hay)
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+
+	return "127.0.0.1"
 }
 
 // startLicenseHeartbeat verifica la validez de la licencia cada 4 horas.
@@ -999,7 +1218,23 @@ func (a *App) GetProducts() []db.ProductDTO {
 	db.GetDB().Find(&products)
 	var dtos []db.ProductDTO
 	for _, p := range products {
-		dtos = append(dtos, db.ProductDTO{SKU: p.SKU, Name: p.Name, Price: p.Price, Stock: p.Stock, TaxCode: strconv.Itoa(p.TaxCode), TaxPercentage: p.TaxPercentage})
+		expiryStr := ""
+		if p.ExpiryDate != nil {
+			expiryStr = p.ExpiryDate.Format("2006-01-02")
+		}
+		dtos = append(dtos, db.ProductDTO{
+			SKU:           p.SKU,
+			Name:          p.Name,
+			Price:         p.Price,
+			Stock:         p.Stock,
+			TaxCode:       strconv.Itoa(p.TaxCode),
+			TaxPercentage: p.TaxPercentage,
+			Barcode:       p.Barcode,
+			AuxiliaryCode: p.AuxiliaryCode,
+			MinStock:      p.MinStock,
+			ExpiryDate:    expiryStr,
+			Location:      p.Location,
+		})
 	}
 	return dtos
 }
@@ -1019,6 +1254,14 @@ func (a *App) SaveProduct(dto db.ProductDTO) string {
 		return fmt.Sprintf("Error: Código de impuesto inválido: %v", err)
 	}
 
+	var expiryDate *time.Time
+	if dto.ExpiryDate != "" {
+		parsed, err := time.Parse("2006-01-02", dto.ExpiryDate)
+		if err == nil {
+			expiryDate = &parsed
+		}
+	}
+
 	var existing db.Product
 	result := db.GetDB().First(&existing, "sku = ?", dto.SKU)
 	if result.Error == nil {
@@ -1027,11 +1270,29 @@ func (a *App) SaveProduct(dto db.ProductDTO) string {
 		existing.Stock = dto.Stock
 		existing.TaxCode = taxCodeInt
 		existing.TaxPercentage = dto.TaxPercentage
+		existing.Barcode = dto.Barcode
+		existing.AuxiliaryCode = dto.AuxiliaryCode
+		existing.MinStock = dto.MinStock
+		existing.ExpiryDate = expiryDate
+		existing.Location = dto.Location
+
 		if err := db.GetDB().Save(&existing).Error; err != nil {
 			return fmt.Sprintf("Error actualizando producto: %v", err)
 		}
 	} else {
-		newProd := db.Product{SKU: dto.SKU, Name: dto.Name, Price: dto.Price, Stock: dto.Stock, TaxCode: taxCodeInt, TaxPercentage: dto.TaxPercentage}
+		newProd := db.Product{
+			SKU:           dto.SKU,
+			Name:          dto.Name,
+			Price:         dto.Price,
+			Stock:         dto.Stock,
+			TaxCode:       taxCodeInt,
+			TaxPercentage: dto.TaxPercentage,
+			Barcode:       dto.Barcode,
+			AuxiliaryCode: dto.AuxiliaryCode,
+			MinStock:      dto.MinStock,
+			ExpiryDate:    expiryDate,
+			Location:      dto.Location,
+		}
 		if err := db.GetDB().Create(&newProd).Error; err != nil {
 			return fmt.Sprintf("Error creando producto: %v", err)
 		}

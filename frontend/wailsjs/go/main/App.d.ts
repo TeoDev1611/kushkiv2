@@ -44,6 +44,8 @@ export function GetProducts():Promise<Array<db.ProductDTO>>;
 
 export function GetQuotations(arg1:number,arg2:number):Promise<main.QuotationListResponse>;
 
+export function GetSatelliteConnectionInfo():Promise<main.SatelliteConnectionDTO>;
+
 export function GetStatisticsCharts():Promise<main.ChartsDTO>;
 
 export function GetSyncLogs():Promise<Array<service.SyncLog>>;

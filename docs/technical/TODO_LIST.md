@@ -24,6 +24,7 @@
 - [x] **Backups:** Módulo para listar y crear respaldos ZIP.
 - [x] **Auditoría:** Tabla `MailLog` y visualización en pestaña "Actividad".
 - [x] **Búsqueda:** Dropdown de clientes optimizado con scroll.
+- [x] **POS Avanzado:** Selección y creación rápida de clientes (+Nuevo) y Acceso QR directo.
 
 ## 🚀 Mantenimiento Futuro (Post-Entrega)
 

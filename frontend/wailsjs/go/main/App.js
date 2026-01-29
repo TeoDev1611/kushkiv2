@@ -82,6 +82,10 @@ export function GetQuotations(arg1, arg2) {
   return window['go']['main']['App']['GetQuotations'](arg1, arg2);
 }
 
+export function GetSatelliteConnectionInfo() {
+  return window['go']['main']['App']['GetSatelliteConnectionInfo']();
+}
+
 export function GetStatisticsCharts() {
   return window['go']['main']['App']['GetStatisticsCharts']();
 }

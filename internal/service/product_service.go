@@ -7,6 +7,7 @@ import (
 	"kushkiv2/internal/db"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ProductService struct{}
@@ -16,7 +17,7 @@ func NewProductService() *ProductService {
 }
 
 // ImportProductsFromCSV lee un CSV e inserta/actualiza productos en la base de datos.
-// Formato esperado: SKU, Nombre, Precio, Stock, CodigoImpuesto, PorcentajeIVA
+// Formato esperado: SKU, Nombre, Precio, Stock, CodigoImpuesto, PorcentajeIVA, Barcode, AuxiliaryCode, MinStock, ExpiryDate, Location
 func (s *ProductService) ImportProductsFromCSV(reader io.Reader) (int, error) {
 	csvReader := csv.NewReader(reader)
 	// Saltar cabecera si existe (asumimos que la primera fila es cabecera si contiene "sku" o "nombre")
@@ -75,6 +76,32 @@ func (s *ProductService) ImportProductsFromCSV(reader io.Reader) (int, error) {
 			taxPercentage, _ = strconv.Atoi(record[5])
 		}
 
+		var barcode, auxCode, location string
+		var minStock int
+		var expiryDate *time.Time
+
+		if len(record) > 6 {
+			barcode = strings.TrimSpace(record[6])
+		}
+		if len(record) > 7 {
+			auxCode = strings.TrimSpace(record[7])
+		}
+		if len(record) > 8 {
+			minStock, _ = strconv.Atoi(record[8])
+		}
+		if len(record) > 9 {
+			expiryStr := strings.TrimSpace(record[9])
+			if expiryStr != "" {
+				parsed, err := time.Parse("2006-01-02", expiryStr)
+				if err == nil {
+					expiryDate = &parsed
+				}
+			}
+		}
+		if len(record) > 10 {
+			location = strings.TrimSpace(record[10])
+		}
+
 		if sku == "" || name == "" {
 			continue
 		}
@@ -86,6 +113,11 @@ func (s *ProductService) ImportProductsFromCSV(reader io.Reader) (int, error) {
 			Stock:         stock,
 			TaxCode:       taxCode,
 			TaxPercentage: taxPercentage,
+			Barcode:       barcode,
+			AuxiliaryCode: auxCode,
+			MinStock:      minStock,
+			ExpiryDate:    expiryDate,
+			Location:      location,
 		}
 
 		// Upsert logic

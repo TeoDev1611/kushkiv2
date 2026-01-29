@@ -6,6 +6,7 @@
     import { withLoading } from '$lib/stores/app';
     import type { db } from 'wailsjs/go/models';
     import * as WailsApp from 'wailsjs/go/main/App';
+    import ClientForm from '$lib/components/ClientForm.svelte';
 
     // Tipos locales si no están completos en el modelo
     interface ClientUI extends db.ClientDTO {
@@ -28,18 +29,11 @@
 
     // Handler para evento global de guardado (Ctrl+S)
     const handleGlobalSave = () => {
-        if (editingClient.ID && editingClient.Nombre) {
-            handleSave();
-        }
+        // Delegado al componente ClientForm si es necesario, pero aquí usamos el botón del form.
     };
 
     onMount(() => {
-        window.addEventListener('app-save', handleGlobalSave);
         loadClients();
-    });
-
-    onDestroy(() => {
-        window.removeEventListener('app-save', handleGlobalSave);
     });
 
     async function loadClients() {
@@ -81,24 +75,9 @@
         isEditing = true;
     }
 
-    async function handleSave() {
-        if (!editingClient.ID || !editingClient.Nombre) {
-            notifications.show("Cédula/RUC y Nombre son obligatorios", "warning");
-            return;
-        }
-
-        try {
-            const res = await withLoading(Backend.saveClient(editingClient));
-            if (res.startsWith("Error")) {
-                notifications.show(res, "error");
-            } else {
-                notifications.show("Cliente guardado exitosamente", "success");
-                await loadClients();
-                if (!isEditing) resetForm(); // Limpiar solo si era creación nueva
-            }
-        } catch (e) {
-            notifications.show("Error guardando: " + e, "error");
-        }
+    function onClientSaved() {
+        loadClients();
+        if (!isEditing) resetForm();
     }
 
     async function handleDelete(id: string) {
@@ -150,40 +129,13 @@
                 <button class="btn-icon-mini" title="Limpiar" on:click={resetForm}>✨</button>
             </div>
             
-            <div class="sidebar-content">
-                <div class="field">
-                    <label for="c-id">Identificación (RUC/Cédula)</label>
-                    <input id="c-id" bind:value={editingClient.ID} placeholder="099..." disabled={isEditing} />
-                </div>
-
-                <div class="field">
-                    <label for="c-name">Razón Social / Nombre</label>
-                    <input id="c-name" bind:value={editingClient.Nombre} placeholder="Nombre completo" />
-                </div>
-
-                <div class="field">
-                    <label for="c-email">Correo Electrónico</label>
-                    <input id="c-email" type="email" bind:value={editingClient.Email} placeholder="cliente@ejemplo.com" />
-                </div>
-
-                <div class="field">
-                    <label for="c-addr">Dirección</label>
-                    <input id="c-addr" bind:value={editingClient.Direccion} placeholder="Dirección completa" />
-                </div>
-
-                <div class="field">
-                    <label for="c-tel">Teléfono</label>
-                    <input id="c-tel" bind:value={editingClient.Telefono} placeholder="099..." />
-                </div>
-            </div>
-
-            <div class="sidebar-footer mt-4">
-                <button class="btn-primary full-width" on:click={handleSave}>
-                    {isEditing ? "Actualizar Datos" : "Registrar Cliente"}
-                </button>
-                {#if isEditing}
-                    <button class="btn-secondary full-width mt-2" on:click={resetForm}>Cancelar Edición</button>
-                {/if}
+            <div class="sidebar-content mt-4">
+                <ClientForm 
+                    bind:client={editingClient} 
+                    isEditing={isEditing}
+                    on:saved={onClientSaved}
+                    on:cancel={resetForm}
+                />
             </div>
         </div>
 

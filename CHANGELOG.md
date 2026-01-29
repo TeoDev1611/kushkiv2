@@ -2,6 +2,23 @@
 
 Todas las modificaciones notables al proyecto "Kushki Facturador" se documentarán en este archivo.
 
+## [2.6.0] - 2026-01-28
+
+### ✨ Características Nuevas (POS & Satélite)
+- **POS - Selección Avanzada de Clientes:**
+    - Implementado modal de búsqueda de clientes en el punto de venta.
+    - Añadida funcionalidad de "Registro Rápido" (+ Nuevo) para crear clientes sin salir del flujo de venta.
+- **POS - Acceso Rápido Satélite:**
+    - Añadido botón QR (📱) en la cabecera del POS para vinculación rápida de dispositivos móviles.
+- **Mejora UX - Código QR:**
+    - El código QR ahora codifica la URL directa de conexión (ej: `http://192.168.x.x:8085/?token=...`) para apertura inmediata en móviles.
+
+### 🛠️ Refactorización
+- **Componente ClientForm:** Extraída la lógica de formulario de clientes a `src/lib/components/ClientForm.svelte` para reutilización.
+
+### 🐛 Correcciones
+- **Reset de Formulario:** Corregido bug donde el formulario de "Nuevo Cliente" en el POS mantenía datos antiguos.
+
 ## [2.5.0] - 2026-01-21
 
 ### Añadido

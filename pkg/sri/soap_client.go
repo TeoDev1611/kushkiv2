@@ -3,9 +3,11 @@ package sri
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
+	"kushkiv2/pkg/logger"
 	"net/http"
 	"time"
 )
@@ -69,18 +71,26 @@ func (s *SRIClient) EnviarComprobante(xmlFirmado []byte) (*RespuestaRecepcion, e
    </soapenv:Body>
 </soapenv:Envelope>`, xmlBase64)
 
-	fmt.Printf("\n--- SRI RECEPCIÓN REQUEST ---\n%s\n-----------------------------\n", soapEnvelope)
+	if logger.DebugMode {
+		logger.Debug("\n--- SRI RECEPCIÓN REQUEST ---\n%s\n-----------------------------", soapEnvelope)
+	}
 
 	respBody, err := s.doRequest(SRIRecepciónPruebas, soapEnvelope)
 	if err != nil {
 		return nil, err
 	}
 	
-	fmt.Printf("\n--- SRI RECEPCIÓN RESPONSE ---\n%s\n------------------------------\n", string(respBody))
-
 	var envelope soapResponseRecepcion
 	if err := xml.Unmarshal(respBody, &envelope); err != nil {
+		if logger.DebugMode {
+			logger.Error("\n--- SRI RECEPCIÓN RESPONSE (RAW ERROR) ---\n%s\n------------------------------", string(respBody))
+		}
 		return nil, fmt.Errorf("error parsing recepcion response: %v | raw: %s", err, string(respBody))
+	}
+
+	if logger.DebugMode {
+		jsonBytes, _ := json.MarshalIndent(envelope, "", "  ")
+		logger.Debug("\n--- SRI RECEPCIÓN RESPONSE (JSON) ---\n%s\n------------------------------", string(jsonBytes))
 	}
 
 	return &envelope.Body.ValidarResponse.Respuesta, nil
@@ -98,18 +108,26 @@ func (s *SRIClient) AutorizarComprobante(claveAcceso string) (*RespuestaAutoriza
    </soapenv:Body>
 </soapenv:Envelope>`, claveAcceso)
 
-	fmt.Printf("\n--- SRI AUTORIZACIÓN REQUEST ---\n%s\n--------------------------------\n", soapEnvelope)
+	if logger.DebugMode {
+		logger.Debug("\n--- SRI AUTORIZACIÓN REQUEST ---\n%s\n--------------------------------", soapEnvelope)
+	}
 
 	respBody, err := s.doRequest(SRIAutorizaciónPruebas, soapEnvelope)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("\n--- SRI AUTORIZACIÓN RESPONSE ---\n%s\n---------------------------------\n", string(respBody))
-
 	var envelope soapResponseAutorizacion
 	if err := xml.Unmarshal(respBody, &envelope); err != nil {
+		if logger.DebugMode {
+			logger.Error("\n--- SRI AUTORIZACIÓN RESPONSE (RAW ERROR) ---\n%s\n---------------------------------", string(respBody))
+		}
 		return nil, fmt.Errorf("error parsing autorizacion response: %v | raw: %s", err, string(respBody))
+	}
+
+	if logger.DebugMode {
+		jsonBytes, _ := json.MarshalIndent(envelope, "", "  ")
+		logger.Debug("\n--- SRI AUTORIZACIÓN RESPONSE (JSON) ---\n%s\n---------------------------------", string(jsonBytes))
 	}
 
 	return &envelope.Body.AutorizacionResponse.Respuesta, nil

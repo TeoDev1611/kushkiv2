@@ -1,37 +1,35 @@
 # GEMINI.md - Contexto del Proyecto "Kushki Facturador"
 
-## Estado del Proyecto: FASE 10 (Pulido Final y Documentación)
+## Estado del Proyecto: FASE 12 (Mobile v2 & Optimización) - EN CURSO
 
-Este proyecto ha evolucionado a un sistema de facturación electrónica profesional de alto nivel. Se han completado los módulos de **Cotizaciones**, **Analítica Avanzada** y **Búsqueda Inteligente**, consolidando la oferta de valor.
+Este proyecto ha evolucionado a un ecosistema de facturación omnicanal. Se han optimizado los módulos de **Punto de Venta (Retail)** y **Conectividad Móvil (Echo Server)**, permitiendo una experiencia de usuario fluida y profesional.
 
 ## 1. Arquitectura Implementada
 
-*   **Frontend (`frontend/`):** Svelte. Diseño "Obsidian & Mint". Componentes reactivos (`ChartFrame`, `QuotationPanel`).
-*   **Backend (`app.go`):** Controlador principal optimizado. Gestión de Licencia, Backups, SMTP Local y Bridge Wails.
+*   **Frontend (`frontend/`):** Svelte. Diseño "Obsidian & Mint". Componentes reactivos (`PosView`, `ProductList`).
+*   **Backend (`app.go`):** Controlador principal optimizado con **Echo Framework**.
+*   **Móvil (`internal/mobile/`):** App Web modernizada con soporte para escaneo de cámara (HTML5-QRCode) y Modo POS remoto.
 *   **Servicios (`internal/service/`):**
-    *   `InvoiceService`: Núcleo de facturación SRI con validación estricta.
-    *   `QuotationService`: (NUEVO) Gestión de cotizaciones y conversión a facturas.
-    *   `SearchService`: (NUEVO) Motor de búsqueda Fuzzy en memoria para Clientes, Productos y Facturas.
-    *   `ChartService`: (NUEVO) Generador de gráficos interactivos con `go-echarts`.
-    *   `MailService`: Motor SMTP Local.
-    *   `SyncService` & `ReportService`: Utilidades de soporte.
-*   **Base de Datos:** SQLite + GORM. Nuevas tablas: `Quotation`, `QuotationItem`.
+    *   `InvoiceService`: Facturación con re-generación de secuencial atómica.
+    *   `SearchService`: Motor de búsqueda Fuzzy optimizado.
+*   **Base de Datos:** SQLite + GORM. Optimizada para actualizaciones de stock concurrentes.
 
-## 2. Hitos Recientes (Q1 2026 - Feature Complete)
+## 2. Hitos Recientes (Enero 2026)
 
-*   **Módulo de Cotizaciones:**
-    *   Interfaz dedicada para crear y gestionar proformas.
-    *   Generación automática de PDF.
-    *   Conversión de "Cotización a Factura" con un clic.
-*   **Inteligencia de Negocios:**
-    *   **Gráficos:** Implementación de `go-echarts` para visualizar "Ingresos Mensuales" y "Top Clientes" directamente en el Dashboard.
-    *   **Búsqueda Fuzzy:** Implementación de `sahilm/fuzzy` para búsquedas tolerantes a errores en todo el sistema.
-*   **Autonomía de Correo (SMTP Local):**
-    *   Soporte nativo para Gmail/Outlook.
-    *   Validación de conexión SMTP.
-*   **UI/UX Refinada:**
-    *   Corrección masiva de accesibilidad (A11y).
-    *   Dashboard con grid de gráficos interactivos.
+*   **Módulo POS (Retail):**
+    *   Búsqueda y creación rápida de clientes (+Nuevo).
+    *   Sincronización instantánea con Escáner Móvil.
+    *   Acceso QR directo desde la cabecera.
+*   **Satélite Móvil v2:**
+    *   Migración a **Echo Framework** con Gzip y CORS.
+    *   Interfaz rediseñada (Obsidian & Mint).
+    *   Lector de cámara integrado para inventario y ventas.
+*   **Debug & Logs:**
+    *   Logs condicionales (`--kushki-debug`).
+    *   Formateo de respuestas SRI XML a JSON legible en consola.
+*   **Robustez:**
+    *   Corrección de conflictos de concurrencia en `ClaveAcceso` y `Unique Constraints`.
+    *   Detección inteligente de IP LAN y override manual.
 
 ## 3. Comandos Útiles
 
@@ -41,4 +39,4 @@ Este proyecto ha evolucionado a un sistema de facturación electrónica profesio
 
 ## 4. Estado Final
 
-El sistema es una solución "todo en uno" (All-in-One) para la facturación electrónica en Ecuador. Cumple con la normativa SRI, ofrece herramientas de venta (Cotizaciones) y análisis (Gráficos), todo bajo una arquitectura segura y local.
+El sistema es una solución "todo en uno" para Ecuador. Integra Facturación Electrónica, Punto de Venta (POS) y Gestión de Bodega Móvil en un solo ejecutable, sin dependencias externas complejas.

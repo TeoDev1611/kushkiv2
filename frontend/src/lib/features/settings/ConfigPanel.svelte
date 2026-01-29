@@ -5,6 +5,7 @@
     import { notifications } from '$lib/stores/notifications';
     import { withLoading } from '$lib/stores/app';
     import * as WailsApp from 'wailsjs/go/main/App'; 
+    import QRCode from 'qrcode';
 
     let config = {
         RUC: "",
@@ -27,6 +28,7 @@
     };
 
     let showPassword = false;
+    let satelliteInfo: any = null;
 
     // Handler para evento global de guardado (Ctrl+S)
     const handleGlobalSave = () => handleSaveConfig();
@@ -38,6 +40,7 @@
             if (cfg) {
                 config = { ...config, ...cfg };
             }
+            loadSatelliteInfo();
         } catch (e) {
             notifications.show("Error cargando configuración: " + e, "error");
         }
@@ -46,6 +49,40 @@
     onDestroy(() => {
         window.removeEventListener('app-save', handleGlobalSave);
     });
+
+    async function loadSatelliteInfo() {
+        try {
+            const info = await WailsApp.GetSatelliteConnectionInfo();
+            if (info) {
+                // Si ya teníamos una IP manual editada, la conservamos. Si no, usamos la detectada.
+                if (!satelliteInfo) {
+                    satelliteInfo = info;
+                }
+            }
+            updateQR();
+        } catch (e) {
+            console.error("Error loading satellite info:", e);
+        }
+    }
+
+    function updateQR() {
+        const canvas = document.getElementById('qr-canvas');
+        if (canvas && satelliteInfo) {
+            // Reconstruir URL con la IP (posiblemente editada)
+            const url = `http://${satelliteInfo.ip}:${satelliteInfo.port}/?token=${satelliteInfo.token}`;
+            
+            QRCode.toCanvas(canvas, url, { 
+                width: 180,
+                margin: 1,
+                color: {
+                    dark: '#000000',
+                    light: '#ffffff'
+                }
+            }, (error) => {
+                if (error) console.error("QR Error:", error);
+            });
+        }
+    }
 
     async function handleSaveConfig() {        try {
             // Asegurar tipos numéricos
@@ -257,6 +294,56 @@
             </div>
             
             <button class="btn-secondary mt-2 full-width" on:click={handleTestSMTP}>📡 Probar Conexión</button>
+        </div>
+
+        <!-- Satélite Móvil -->
+        <div class="card">
+            <h3>📱 Satélite Móvil</h3>
+            <p class="text-secondary text-caption mb-2">Conecte su celular para gestión de inventario y escáner.</p>
+
+            <div class="satellite-container" style="display: flex; flex-direction: column; align-items: center; gap: 15px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px;">
+                <canvas id="qr-canvas" style="border-radius: 8px;"></canvas>
+                
+                {#if satelliteInfo}
+                    <div class="pin-display" style="text-align: center;">
+                        <span style="display: block; font-size: 12px; color: var(--text-tertiary);">PIN DE CONEXIÓN</span>
+                        <span style="font-size: 32px; font-weight: 900; letter-spacing: 4px; color: var(--accent-mint);">{satelliteInfo.token}</span>
+                    </div>
+                    
+                    <div class="ip-control" style="width: 100%;">
+                        <label for="sat-ip" style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;">Dirección IP del PC:</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input 
+                                id="sat-ip" 
+                                type="text" 
+                                bind:value={satelliteInfo.ip} 
+                                on:input={updateQR}
+                                style="text-align: center; font-family: monospace; letter-spacing: 1px;"
+                            />
+                        </div>
+                        <p class="text-caption text-secondary mt-1 text-center">
+                            Puerto: {satelliteInfo.port}
+                        </p>
+                    </div>
+
+                    <div style="background: rgba(255, 165, 0, 0.15); border: 1px solid orange; padding: 10px; border-radius: 6px; font-size: 12px; color: #ffcc80;">
+                        <strong>⚠️ ¿No conecta?</strong>
+                        <ul style="padding-left: 20px; margin: 5px 0 0 0; display: flex; flex-direction: column; gap: 4px;">
+                            <li>
+                                <strong>Firewall:</strong> Asegúrese de permitir el tráfico en el puerto <strong>8085</strong> (TCP).
+                                <br><span style="opacity: 0.8; font-size: 11px;">(Windows Defender, UFW, Firewalld, etc.)</span>
+                            </li>
+                            <li>Verifique que ambos dispositivos estén en la <strong>misma red Wi-Fi</strong>.</li>
+                            <li><a href="#" style="color: var(--accent-mint); text-decoration: underline;" on:click|preventDefault={() => notifications.show("Revise la documentación en la carpeta 'docs'", "info")}>Ver Documentación de Ayuda</a></li>
+                        </ul>
+                    </div>
+                {:else}
+                    <p>Cargando información del servidor...</p>
+                {/if}
+            </div>
+            <p class="text-caption text-secondary mt-2 text-center">
+                Asegúrese de que el dispositivo móvil esté conectado a la misma red Wi-Fi.
+            </p>
         </div>
     </div>
 </div>
